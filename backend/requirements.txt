@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pikepdf
+python-multipart
+pdf2docx
+pymupdf
+python-pptx
+pdfplumber
+openpyxl
+Pillow
+ocrmypdf
