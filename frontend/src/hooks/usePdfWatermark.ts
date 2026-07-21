@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 
 export interface WatermarkOptions {
   text: string;
@@ -28,7 +28,6 @@ export const usePdfWatermark = () => {
       const pdf = await PDFDocument.load(arrayBuffer);
       const font = await pdf.embedFont(StandardFonts.HelveticaBold);
       const color = COLOR_MAP[opts.color];
-      const rotRad = (opts.rotation * Math.PI) / 180;
 
       for (const page of pdf.getPages()) {
         const { width, height } = page.getSize();
@@ -42,7 +41,7 @@ export const usePdfWatermark = () => {
             font,
             color,
             opacity: opts.opacity,
-            rotate: { type: 'degrees', angle: opts.rotation },
+            rotate: degrees(opts.rotation),
           });
         } else {
           // Tiled: repeat across the page
@@ -57,7 +56,7 @@ export const usePdfWatermark = () => {
                 font,
                 color,
                 opacity: opts.opacity,
-                rotate: { type: 'degrees', angle: opts.rotation },
+                rotate: degrees(opts.rotation),
               });
             }
           }
@@ -65,7 +64,7 @@ export const usePdfWatermark = () => {
       }
 
       const bytes = await pdf.save();
-      return new Blob([bytes], { type: 'application/pdf' });
+      return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
     } catch (err: any) {
       setError(err.message || 'Error al añadir la marca de agua.');
       return null;

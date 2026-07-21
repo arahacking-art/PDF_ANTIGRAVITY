@@ -113,7 +113,7 @@ export const usePdfCreate = () => {
       }
 
       const bytes = await pdf.save();
-      return new Blob([bytes], { type: 'application/pdf' });
+      return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
     } catch (err: any) {
       setError(err.message || 'Error al crear el PDF.');
       return null;

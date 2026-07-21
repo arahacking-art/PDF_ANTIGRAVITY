@@ -31,7 +31,7 @@ const ThumbnailSidebar: React.FC<ThumbnailSidebarProps> = ({ visible, onToggle, 
       const page = pdfDoc.getPage(pageIndex);
       page.setRotation(degrees(page.getRotation().angle + 90));
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
       await replaceWithBlob(blob, fileName);
     } catch (error) {
       console.error('Failed to rotate page:', error);
@@ -48,7 +48,7 @@ const ThumbnailSidebar: React.FC<ThumbnailSidebarProps> = ({ visible, onToggle, 
       const pdfDoc = await PDFDocument.load(arrayBuffer);
       pdfDoc.removePage(pageIndex);
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
       await replaceWithBlob(blob, fileName);
     } catch (error) {
       console.error('Failed to delete page:', error);

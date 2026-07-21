@@ -57,7 +57,7 @@ export async function renderPdfPages(
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, canvas: canvas, viewport }).promise;
 
     pages.push({
       index: i - 1,
@@ -103,7 +103,7 @@ export async function renderPageAsCanvas(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  await page.render({ canvasContext: ctx, canvas: canvas, viewport }).promise;
   page.cleanup();
 
   return canvas;

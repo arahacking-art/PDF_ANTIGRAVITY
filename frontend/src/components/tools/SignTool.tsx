@@ -134,7 +134,7 @@ const SignTool: React.FC = () => {
   }, [selectedPage, sigDataUrl, sigPos]);
 
   useEffect(() => {
-    setOverlayRenderer(() => (pageIndex: number, dims: {width: number, height: number}) => renderOverlay(pageIndex, dims));
+    setOverlayRenderer(renderOverlay);
     return () => setOverlayRenderer(null);
   }, [renderOverlay, setOverlayRenderer]);
 
@@ -167,7 +167,7 @@ const SignTool: React.FC = () => {
       page.drawImage(img, { x, y, width: w, height: h });
 
       const bytes = await pdfDoc.save();
-      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
       setResultBlob(blob);
     } catch (e: any) { setError(e.message || 'Error al firmar'); }
     finally { setIsProcessing(false); }

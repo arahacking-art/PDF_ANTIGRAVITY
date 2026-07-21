@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { usePdfContext } from '../../context/PdfContext';
-import * as pdfjsLib from 'pdfjs-dist';
+
 
 // ── Types ──────────────────────────────────────────────────
 export type ZoomMode = 'fit-width' | 'fit-page' | 'custom';
@@ -14,11 +14,6 @@ interface PdfViewerProps {
   renderPageOverlay?: (pageIndex: number, dims: { width: number; height: number }) => React.ReactNode;
 }
 
-const PDFJS_OPTIONS = {
-  cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
-  cMapPacked: true,
-  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
-};
 
 /**
  * Central PDF Viewer with continuous scroll.
@@ -30,7 +25,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ zoom, onPageVisible, renderPageOv
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderingRef = useRef<Set<number>>(new Set());
   const renderedScaleRef = useRef<Map<number, number>>(new Map());
-  const [visiblePage, setVisiblePage] = useState(0);
 
   // ── Render a single page to its canvas ──────────────────
   const renderPage = useCallback(async (pageIndex: number) => {
@@ -59,7 +53,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ zoom, onPageVisible, renderPageOv
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({ canvasContext: ctx, canvas, viewport }).promise;
       renderedScaleRef.current.set(pageIndex, zoom);
       page.cleanup();
     } catch (e) {
@@ -82,7 +76,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ zoom, onPageVisible, renderPageOv
           const idx = parseInt(entry.target.getAttribute('data-page-index') || '0', 10);
           if (entry.isIntersecting) {
             renderPage(idx);
-            setVisiblePage(idx);
             onPageVisible?.(idx);
           }
         }

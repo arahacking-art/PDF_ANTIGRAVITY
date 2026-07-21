@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { usePdfCreate, type PdfBlock, type TextBlock, type ImageBlock } from '../../hooks/usePdfCreate';
 import Button from '../ui/Button';
 import { FilePlus, Type, Image, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';

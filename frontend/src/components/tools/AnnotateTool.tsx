@@ -58,7 +58,7 @@ const AnnotateTool: React.FC = () => {
     }
   }, [mode, activeTextInput, commitText]);
 
-  const onPointerMove = useCallback((e: React.PointerEvent, pageIndex: number, dims: {width: number, height: number}) => {
+  const onPointerMove = useCallback((e: React.PointerEvent, _pageIndex: number, dims: {width: number, height: number}) => {
     if (mode === 'draw' && isDrawing) {
       const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
       const x = (e.clientX - rect.left) / dims.width;
@@ -76,6 +76,7 @@ const AnnotateTool: React.FC = () => {
         setCurrentPath([]);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, isDrawing, currentPath]);
 
   const renderOverlay = useCallback((pageIndex: number, dims: { width: number; height: number }) => {
@@ -145,7 +146,7 @@ const AnnotateTool: React.FC = () => {
   }, [mode, annotations, currentPath, activeTextInput, onPointerDown, onPointerMove, onPointerUp, commitText]);
 
   useEffect(() => {
-    setOverlayRenderer(() => (pageIndex: number, dims: {width: number, height: number}) => renderOverlay(pageIndex, dims));
+    setOverlayRenderer(renderOverlay);
     return () => setOverlayRenderer(null);
   }, [renderOverlay, setOverlayRenderer]);
 
@@ -188,7 +189,7 @@ const AnnotateTool: React.FC = () => {
       }
 
       const bytes = await pdfDoc.save();
-      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
       setResultBlob(blob);
     } catch (e: any) { 
       setError(e.message || 'Error al anotar'); 
@@ -229,14 +230,14 @@ const AnnotateTool: React.FC = () => {
         <div className="space-y-6">
           <div className="flex items-center gap-4">
             <Button 
-              variant={mode === 'text' ? 'primary' : 'outline'} 
+              variant={mode === 'text' ? 'default' : 'outline'} 
               onClick={() => { setMode(mode === 'text' ? null : 'text'); setActiveTextInput(null); }}
               className="flex gap-2 items-center"
             >
               <Type className="w-4 h-4" /> Añadir Texto
             </Button>
             <Button 
-              variant={mode === 'draw' ? 'primary' : 'outline'} 
+              variant={mode === 'draw' ? 'default' : 'outline'} 
               onClick={() => { setMode(mode === 'draw' ? null : 'draw'); setActiveTextInput(null); }}
               className="flex gap-2 items-center"
             >

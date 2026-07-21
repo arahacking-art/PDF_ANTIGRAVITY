@@ -85,7 +85,7 @@ const ReorganizeTool: React.FC = () => {
       const copied = await newPdf.copyPages(original, pageOrder);
       copied.forEach(p => newPdf.addPage(p));
       const bytes = await newPdf.save();
-      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
       setResultBlob(blob);
     } catch (e: any) { setError(e.message || 'Error al reorganizar'); }
     finally { setIsProcessing(false); }

@@ -136,7 +136,7 @@ const FormTool: React.FC = () => {
       }
 
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
       setResultBlob(blob);
     } catch (err: any) {
       setError(err.message || 'Error al procesar el PDF');

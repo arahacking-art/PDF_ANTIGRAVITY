@@ -121,7 +121,7 @@ const RedactTool: React.FC = () => {
 
   useEffect(() => {
     if (workspaceFile && !resultBlob) {
-      setOverlayRenderer(() => (pageIndex: number, dims: {width: number, height: number}) => (
+      setOverlayRenderer((pageIndex: number, dims: {width: number, height: number}) => (
         <PageOverlay 
           key={`overlay-${pageIndex}`}
           pageIndex={pageIndex} 
@@ -155,7 +155,7 @@ const RedactTool: React.FC = () => {
       }
 
       const bytes = await pdfDoc.save();
-      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
       setResultBlob(blob);
     } catch (e: any) { setError(e.message || 'Error al censurar'); }
     finally { setIsProcessing(false); }

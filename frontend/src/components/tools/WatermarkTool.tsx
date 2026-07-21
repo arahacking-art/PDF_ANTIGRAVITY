@@ -30,7 +30,7 @@ const WatermarkTool: React.FC = () => {
   const { addWatermark, isProcessing, error } = usePdfWatermark();
 
   useEffect(() => {
-    setOverlayRenderer(() => (pageIndex: number, dims: { width: number; height: number }) => {
+    setOverlayRenderer((_pageIndex: number, _dims: { width: number; height: number }) => {
       const { text, color, opacity, position, fontSize, rotation } = opts;
       const isCenter = position === 'center';
       const colorMap = { gray: '#9ca3af', red: '#ef4444', blue: '#3b82f6' };

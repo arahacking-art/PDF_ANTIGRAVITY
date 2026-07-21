@@ -178,7 +178,7 @@ function Workspace() {
 
   const handleDownload = useCallback(() => {
     if (!arrayBuffer || !fileName) return;
-    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    const blob = new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -33,7 +33,7 @@ export const usePdfSign = () => {
       }
 
       const page = pages[pageIndex];
-      const { width, height } = page.getSize();
+      const { width, height: _height } = page.getSize();
 
       // Incrustar imagen (soporta JPG y PNG)
       const mimeType = signatureImageFile.type;
@@ -68,7 +68,7 @@ export const usePdfSign = () => {
       });
 
       const signedBytes = await pdf.save();
-      return new Blob([signedBytes], { type: 'application/pdf' });
+      return new Blob([signedBytes as unknown as BlobPart], { type: 'application/pdf' });
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Error al firmar el PDF.');

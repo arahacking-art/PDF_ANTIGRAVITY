@@ -52,7 +52,7 @@ export const usePdfSplit = () => {
       copiedPages.forEach((page) => newPdf.addPage(page));
 
       const newPdfBytes = await newPdf.save();
-      return new Blob([newPdfBytes], { type: 'application/pdf' });
+      return new Blob([newPdfBytes as unknown as BlobPart], { type: 'application/pdf' });
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Error al procesar el PDF.');

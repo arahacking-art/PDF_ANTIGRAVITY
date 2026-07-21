@@ -19,7 +19,7 @@ export const usePdfMerge = () => {
       }
 
       const mergedPdfBytes = await mergedPdf.save();
-      return new Blob([mergedPdfBytes], { type: 'application/pdf' });
+      return new Blob([mergedPdfBytes as unknown as BlobPart], { type: 'application/pdf' });
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Error al procesar los PDFs.');

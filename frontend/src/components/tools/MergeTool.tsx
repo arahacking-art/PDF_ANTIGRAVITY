@@ -31,7 +31,7 @@ const MergeTool: React.FC = () => {
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
       const bytes = await mergedPdf.save();
-      downloadBlob(new Blob([bytes], { type: 'application/pdf' }), 'Documento_Unido.pdf');
+      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), 'Documento_Unido.pdf');
     } catch (e: any) {
       setError(e.message || 'Error al unir los PDFs');
     } finally {
