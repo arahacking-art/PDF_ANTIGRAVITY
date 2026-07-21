@@ -11,16 +11,14 @@ RUN npm run build
 # ─── Etapa 2: Servidor Web (Nginx) ──────────────────────────────────────────
 FROM nginx:alpine
 
-# Railway inyecta $PORT en tiempo de ejecución. Usamos 8080 como valor por defecto.
+# Railway inyecta $PORT. Valor por defecto: 8080.
 ENV PORT=8080
 
 # Copiamos la build estática al directorio público de Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Creamos el template de configuración de Nginx usando $PORT simple
-# (envsubst NO soporta ${PORT:-80}, por eso usamos ENV para el valor por defecto)
-RUN printf 'server {\n    listen %s;\n    location / {\n        root /usr/share/nginx/html;\n        index index.html index.htm;\n        try_files $uri $uri/ /index.html;\n    }\n}\n' '$PORT' > /etc/nginx/templates/default.conf.template
+# Eliminamos la config por defecto de Nginx (viene con puerto 80 hardcodeado)
+RUN rm /etc/nginx/conf.d/default.conf
 
-# Usamos el mecanismo oficial de nginx:alpine para templates de entorno
-# Esto sustituye $PORT en el template y lo coloca en conf.d/ automáticamente
-CMD ["/bin/sh", "-c", "envsubst '$PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Al arrancar: generamos la config con el $PORT real y lanzamos Nginx
+CMD ["/bin/sh", "-c", "echo \"server { listen ${PORT}; location / { root /usr/share/nginx/html; index index.html; try_files \\$uri \\$uri/ /index.html; } }\" > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
