@@ -3,8 +3,8 @@ import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { Minimize2, Loader, CheckCircle, FileText } from 'lucide-react';
+import { BACKEND_URL } from '../../config/api';
 
-const BACKEND_URL = 'http://localhost:8000';
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;

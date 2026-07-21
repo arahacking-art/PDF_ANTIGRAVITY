@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import Button from '../ui/Button';
 import { FileUp, Loader, CheckCircle, XCircle, X } from 'lucide-react';
+import { BACKEND_URL } from '../../config/api';
 
-const BACKEND_URL = 'http://localhost:8000';
 
 const ALL_EXTENSIONS = ['.docx', '.doc', '.odt', '.rtf', '.xlsx', '.xls', '.ods', '.csv', '.pptx', '.ppt', '.odp', '.txt'];
 

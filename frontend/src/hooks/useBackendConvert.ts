@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { BACKEND_URL } from '../config/api';
 
-const BACKEND_URL = 'http://localhost:8000';
 
 type ConversionEndpoint =
   | '/api/compress'
