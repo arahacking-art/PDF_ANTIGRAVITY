@@ -6,24 +6,21 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-# Construye la aplicación estática
 RUN npm run build
 
 # ─── Etapa 2: Servidor Web (Nginx) ──────────────────────────────────────────
 FROM nginx:alpine
 
-# Copiamos la build estática de Vite a la carpeta pública de Nginx
+# Railway inyecta $PORT en tiempo de ejecución. Usamos 8080 como valor por defecto.
+ENV PORT=8080
+
+# Copiamos la build estática al directorio público de Nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Configuramos Nginx para soportar el enrutador de React (Single Page Application)
-RUN echo 'server { \
-    listen ${PORT:-80}; \
-    location / { \
-        root /usr/share/nginx/html; \
-        index index.html index.htm; \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# Creamos el template de configuración de Nginx usando $PORT simple
+# (envsubst NO soporta ${PORT:-80}, por eso usamos ENV para el valor por defecto)
+RUN printf 'server {\n    listen %s;\n    location / {\n        root /usr/share/nginx/html;\n        index index.html index.htm;\n        try_files $uri $uri/ /index.html;\n    }\n}\n' '$PORT' > /etc/nginx/templates/default.conf.template
 
-# Reemplazamos las variables de entorno de Nginx en tiempo de ejecución (para que Railway asigne el puerto)
-CMD sh -c "envsubst '\\$PORT' < /etc/nginx/conf.d/default.conf > /etc/nginx/conf.d/default.conf.tmp && mv /etc/nginx/conf.d/default.conf.tmp /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+# Usamos el mecanismo oficial de nginx:alpine para templates de entorno
+# Esto sustituye $PORT en el template y lo coloca en conf.d/ automáticamente
+CMD ["/bin/sh", "-c", "envsubst '$PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
