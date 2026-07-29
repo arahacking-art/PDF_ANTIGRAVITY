@@ -1,7 +1,475 @@
+/* ============================================================
+   PDF ANTIGRAVITY — Design System
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   COLOR & SPACING TOKENS
+   ============================================================ */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Surfaces — Light */
+  --bg-app:            #DCDCDC;
+  --bg-header:         #F2F2F2;
+  --bg-sidebar:        #1E1E1E;
+  --bg-panel:          #FAFAFA;
+  --bg-viewer:         #BABABA;
+  --bg-card:           #FFFFFF;
+  --bg-hover:          rgba(0, 0, 0, 0.05);
+  --bg-active:         rgba(15, 98, 254, 0.10);
+
+  /* Borders */
+  --border-subtle:     rgba(0, 0, 0, 0.08);
+  --border-medium:     rgba(0, 0, 0, 0.16);
+  --border-strong:     rgba(0, 0, 0, 0.26);
+
+  /* Text */
+  --text-primary:      #1A1A1A;
+  --text-secondary:    #555555;
+  --text-muted:        #888888;
+  --text-inverse:      #FFFFFF;
+
+  /* Accent */
+  --accent:            #0F62FE;
+  --accent-hover:      #0043CE;
+  --accent-subtle:     rgba(15, 98, 254, 0.10);
+
+  /* Semantic */
+  --error:             #DA1E28;
+  --success:           #198038;
+  --warning:           #F1C21B;
+
+  /* Shadows */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.13), 0 2px 4px rgba(0,0,0,0.08);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.16), 0 4px 8px rgba(0,0,0,0.10);
+  --shadow-page: 0 4px 20px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12);
+
+  /* Dimensions */
+  --header-h:               44px;
+  --sidebar-w:              210px;
+  --sidebar-collapsed-w:    52px;
+  --thumb-w:                168px;
+  --panel-w:                420px;
+  --radius-sm:              6px;
+  --radius-md:              10px;
+  --radius-lg:              14px;
+}
+
+/* Dark Mode Tokens — Inspired by Adobe Acrobat Dark + macOS */
+.dark {
+  --bg-app:            #1C1C1E;
+  --bg-header:         #2C2C2E;
+  --bg-sidebar:        #111113;
+  --bg-panel:          #2C2C2E;
+  --bg-viewer:         #0D0D0F;
+  --bg-card:           #3A3A3C;
+  --bg-hover:          rgba(255, 255, 255, 0.06);
+  --bg-active:         rgba(76, 139, 245, 0.15);
+
+  --border-subtle:     rgba(255, 255, 255, 0.07);
+  --border-medium:     rgba(255, 255, 255, 0.13);
+  --border-strong:     rgba(255, 255, 255, 0.22);
+
+  --text-primary:      #F2F2F7;
+  --text-secondary:    #AEAEB2;
+  --text-muted:        #6C6C70;
+  --text-inverse:      #1C1C1E;
+
+  --accent:            #4C8BF5;
+  --accent-hover:      #6DA3FF;
+  --accent-subtle:     rgba(76, 139, 245, 0.15);
+
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.40);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.50);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.60);
+  --shadow-page: 0 6px 32px rgba(0,0,0,0.70), 0 2px 8px rgba(0,0,0,0.50);
+}
+
+/* ============================================================
+   BASE RESET & DEFAULTS
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  @apply bg-gray-300 text-gray-900;
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  height: 100vh;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   SCROLLBARS — Thin, elegant (Acrobat-like)
+   ============================================================ */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  {
+  background: var(--border-medium);
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ============================================================
+   TRANSITIONS — Global smooth transitions
+   ============================================================ */
+.transition-theme {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+/* ============================================================
+   PDF PAGE — Premium shadow on the document
+   ============================================================ */
+.pdf-page-wrapper {
+  box-shadow: var(--shadow-page);
+  transition: box-shadow 0.2s ease;
+}
+.pdf-page-wrapper:hover {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.30), 0 2px 8px rgba(0,0,0,0.16);
+}
+
+/* ============================================================
+   MICRO-ANIMATIONS
+   ============================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInFast {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+@keyframes spinSmooth {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in       { animation: fadeIn 0.18s ease forwards; }
+.animate-fade-in-fast  { animation: fadeInFast 0.12s ease forwards; }
+.animate-slide-right   { animation: slideInRight 0.18s ease forwards; }
+.animate-slide-left    { animation: slideInLeft 0.18s ease forwards; }
+.animate-scale-in      { animation: scaleIn 0.16s ease forwards; }
+.animate-pulse-subtle  { animation: pulseSubtle 1.6s ease-in-out infinite; }
+.animate-spin-smooth   { animation: spinSmooth 0.75s linear infinite; }
+
+/* ============================================================
+   PDF TEXT LAYER — Selectable text overlay from pdf.js
+   ============================================================ */
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  pointer-events: all;
+  user-select: text;
+  /* Required for pdf.js text layer positioning */
+  transform-origin: 0 0;
+}
+
+.pdf-text-layer span,
+.pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-text-layer .highlight {
+  margin: -1px;
+  padding: 1px;
+  background-color: rgba(255, 210, 0, 0.40);
+  border-radius: 2px;
+}
+
+.pdf-text-layer .highlight.selected {
+  background-color: rgba(0, 100, 255, 0.25);
+}
+
+.pdf-text-layer ::selection {
+  background: rgba(15, 98, 254, 0.22);
+  color: transparent;
+}
+
+/* ============================================================
+   SEARCH PANEL — Ctrl+F floating bar
+   ============================================================ */
+.search-panel {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 50;
+  background: var(--bg-header);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: var(--shadow-lg);
+  animation: slideInRight 0.15s ease forwards;
+  min-width: 320px;
+}
+
+.search-panel input {
+  flex: 1;
+  background: var(--bg-app);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search-panel input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.search-panel .count {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 56px;
+  text-align: center;
+  user-select: none;
+}
+
+.search-panel button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.search-panel button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.search-panel button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.search-panel .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-medium);
+  margin: 0 2px;
+}
+
+/* Text highlights in the PDF canvas area */
+.search-match-highlight {
+  position: absolute;
+  background: rgba(255, 210, 0, 0.38);
+  border: 1px solid rgba(200, 160, 0, 0.50);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.search-match-highlight.active {
+  background: rgba(255, 120, 0, 0.45);
+  border-color: rgba(200, 90, 0, 0.70);
+  box-shadow: 0 0 0 2px rgba(255, 120, 0, 0.20);
+}
+
+/* ============================================================
+   RULER — Measurement rulers on viewer edges
+   ============================================================ */
+.ruler-h {
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 0;
+  height: 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-medium);
+  z-index: 15;
+  user-select: none;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ruler-v {
+  position: absolute;
+  left: 0;
+  top: 20px;
+  bottom: 0;
+  width: 20px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-medium);
+  z-index: 15;
+  user-select: none;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-medium);
+  border-bottom: 1px solid var(--border-medium);
+  z-index: 16;
+  user-select: none;
+}
+
+/* ============================================================
+   MINI CONTEXT TOOLBAR — Appears on text selection
+   ============================================================ */
+.mini-toolbar {
+  position: fixed;
+  z-index: 9998;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 3px 4px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.12s ease forwards;
+  pointer-events: all;
+}
+
+.mini-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #D0D0D0;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.10s, color 0.10s;
+}
+
+.mini-toolbar button:hover {
+  background: rgba(255,255,255,0.10);
+  color: #FFFFFF;
+}
+
+.mini-toolbar .separator {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.15);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   VIEWER BACKGROUND — Checkerboard for transparent areas
+   ============================================================ */
+.viewer-bg {
+  background-color: var(--bg-viewer);
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0,0,0,0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.04) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+/* ============================================================
+   TOOL PANEL — Slide-in animation
+   ============================================================ */
+.tool-panel-enter {
+  animation: slideInRight 0.18s ease forwards;
+}
+
+/* ============================================================
+   ZOOM TOOLBAR — Premium glassmorphism style
+   ============================================================ */
+.zoom-toolbar {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ============================================================
+   LOADING SKELETON — Thumbnail placeholders
+   ============================================================ */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--border-subtle) 25%,
+    var(--border-medium) 50%,
+    var(--border-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ============================================================
+   FOCUS STYLES — Accessible keyboard navigation
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

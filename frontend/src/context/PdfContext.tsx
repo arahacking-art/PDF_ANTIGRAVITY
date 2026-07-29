@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import {
+  computeFileHash,
+  getCachedThumbnails,
+  saveThumbnailsToCache,
+  clearExpiredCache,
+} from '../utils/thumbnailCache';
 
 // Configure pdf.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -37,6 +43,10 @@ interface PdfState {
   isLoading: boolean;
   /** Loading progress 0-100 */
   loadProgress: number;
+  /** Indicates if the PDF is password protected and cannot be rendered */
+  isEncrypted?: boolean;
+  /** Error message if PDF loading failed */
+  error?: string | null;
 }
 
 interface PdfContextValue extends PdfState {
@@ -94,10 +104,19 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     fileName: '',
     isLoading: false,
     loadProgress: 0,
+    isEncrypted: false,
+    error: null,
   });
 
   // Keep a ref to the pdfDoc so we can destroy it on cleanup
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // Clean expired cache on first load
+  const cacheCleanedRef = useRef(false);
+  if (!cacheCleanedRef.current) {
+    cacheCleanedRef.current = true;
+    clearExpiredCache().catch(() => {});
+  }
 
   const loadFromArrayBuffer = useCallback(async (ab: ArrayBuffer, fileName: string, fileObj?: File) => {
     // Cleanup previous doc
@@ -106,68 +125,126 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pdfDocRef.current = null;
     }
 
-    setState(prev => ({ ...prev, isLoading: true, loadProgress: 0, fileName }));
+    setState(prev => ({ ...prev, isLoading: true, loadProgress: 0, fileName, error: null, isEncrypted: false }));
 
-    // Create a copy of the ArrayBuffer so pdf.js worker doesn't detach the original
-    // which would corrupt the file bytes for other tools or downloads.
-    const abCopy = ab.slice(0);
-    const loadingTask = pdfjsLib.getDocument({ data: abCopy, ...PDFJS_OPTIONS });
-    const pdfDoc = await loadingTask.promise;
-    pdfDocRef.current = pdfDoc;
+    try {
+      // Compute hash for IndexedDB cache key
+      const fileHash = await computeFileHash(ab);
 
-    const numPages = pdfDoc.numPages;
-    const pageInfos: PdfPageInfo[] = [];
+      // Create a copy of the ArrayBuffer so pdf.js worker doesn't detach the original
+      const abCopy = ab.slice(0);
+      const loadingTask = pdfjsLib.getDocument({ data: abCopy, ...PDFJS_OPTIONS });
+      const pdfDoc = await loadingTask.promise;
+      pdfDocRef.current = pdfDoc;
 
-    // Phase 1: Fast metadata extraction (no canvas rendering)
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const vp = page.getViewport({ scale: 1 });
-      pageInfos.push({
-        index: i - 1,
-        width: vp.width,
-        height: vp.height,
-        thumbnailUrl: '', // Will be generated asynchronously
-      });
-      page.cleanup();
-    }
+      const numPages = pdfDoc.numPages;
+      const pageInfos: PdfPageInfo[] = [];
 
-    // Immediately display the PDF without waiting for thumbnails!
-    setState({
-      file: fileObj || null,
-      arrayBuffer: ab,
-      pdfDoc,
-      pageInfos,
-      numPages,
-      fileName,
-      isLoading: false,
-      loadProgress: 100,
-    });
-
-    // Phase 2: Background thumbnail generation
-    (async () => {
+      // Phase 1: Fast metadata extraction (no canvas rendering)
       for (let i = 1; i <= numPages; i++) {
-        // Double check if document was changed while we were generating
-        if (pdfDocRef.current !== pdfDoc) break;
-        
-        try {
-          const thumb = await generateThumbnail(pdfDoc, i);
-          setState(prev => {
-            // Only update if this is still the active document
-            if (prev.pdfDoc !== pdfDoc) return prev;
-            const newInfos = [...prev.pageInfos];
-            newInfos[i - 1] = { ...newInfos[i - 1], thumbnailUrl: thumb.url };
-            return { ...prev, pageInfos: newInfos };
-          });
-        } catch (e: any) {
-          if (e?.name === 'RenderingCancelledException') {
-            break; // Silently abort, doc was replaced or destroyed
-          }
-          console.warn(`Failed to generate thumbnail for page ${i}`, e);
-        }
+        const page = await pdfDoc.getPage(i);
+        const vp = page.getViewport({ scale: 1 });
+        pageInfos.push({
+          index: i - 1,
+          width: vp.width,
+          height: vp.height,
+          thumbnailUrl: '',
+        });
+        page.cleanup();
       }
-    })();
 
-    return pdfDoc;
+      // Check IndexedDB cache for thumbnails
+      const cachedThumbs = await getCachedThumbnails(fileHash, numPages);
+
+      if (cachedThumbs) {
+        // ✅ Cache hit — load thumbnails instantly
+        const pageInfosWithThumbs = pageInfos.map((info, i) => ({
+          ...info,
+          thumbnailUrl: cachedThumbs[i] || '',
+        }));
+
+        setState({
+          file: fileObj || null,
+          arrayBuffer: ab,
+          pdfDoc,
+          pageInfos: pageInfosWithThumbs,
+          numPages,
+          fileName,
+          isLoading: false,
+          loadProgress: 100,
+          isEncrypted: false,
+          error: null,
+        });
+      } else {
+        // ❌ Cache miss — display immediately, generate in background
+        setState({
+          file: fileObj || null,
+          arrayBuffer: ab,
+          pdfDoc,
+          pageInfos,
+          numPages,
+          fileName,
+          isLoading: false,
+          loadProgress: 100,
+          isEncrypted: false,
+          error: null,
+        });
+
+        // Phase 2: Background thumbnail generation + save to IndexedDB
+        (async () => {
+          const generatedThumbs: string[] = [];
+
+          for (let i = 1; i <= numPages; i++) {
+            if (pdfDocRef.current !== pdfDoc) break;
+
+            try {
+              const thumb = await generateThumbnail(pdfDoc, i);
+              generatedThumbs.push(thumb.url);
+
+              setState(prev => {
+                if (prev.pdfDoc !== pdfDoc) return prev;
+                const newInfos = [...prev.pageInfos];
+                newInfos[i - 1] = { ...newInfos[i - 1], thumbnailUrl: thumb.url };
+                return { ...prev, pageInfos: newInfos };
+              });
+            } catch (e: unknown) {
+              if ((e as {name?: string})?.name === 'RenderingCancelledException') {
+                break;
+              }
+              console.warn(`Failed to generate thumbnail for page ${i}`, e);
+              generatedThumbs.push(''); // Keep array aligned
+            }
+          }
+
+          // Save to IndexedDB if we generated all thumbs
+          if (generatedThumbs.length === numPages && pdfDocRef.current === pdfDoc) {
+            saveThumbnailsToCache(fileHash, generatedThumbs).catch(() => {});
+          }
+        })();
+      }
+
+      return pdfDoc;
+    } catch (err: unknown) {
+      console.warn('Failed to load PDF in viewer:', err);
+      const isEncrypted = (err as {name?: string})?.name === 'PasswordException';
+
+      setState({
+        file: fileObj || null,
+        arrayBuffer: ab,
+        pdfDoc: null,
+        pageInfos: [],
+        numPages: 0,
+        fileName,
+        isLoading: false,
+        loadProgress: 0,
+        isEncrypted,
+        error: isEncrypted
+          ? 'El documento está protegido con contraseña.'
+          : ((err as Error)?.message || 'Error al cargar el PDF.'),
+      });
+
+      return null;
+    }
   }, []);
 
   const loadFile = useCallback(async (file: File) => {
@@ -203,6 +280,8 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fileName: '',
       isLoading: false,
       loadProgress: 0,
+      isEncrypted: false,
+      error: null,
     });
   }, []);
 

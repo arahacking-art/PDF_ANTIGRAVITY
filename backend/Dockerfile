@@ -28,5 +28,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # En Railway, el puerto se inyecta dinámicamente a través de la variable de entorno $PORT
-# Si $PORT no existe (desarrollo local), usa 8000 por defecto.
+# Si $PORT no existe (desarrollo local), usa 8000 por defecto0000.
 CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
