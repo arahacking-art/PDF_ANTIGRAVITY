@@ -145,7 +145,7 @@ const TextLayer: React.FC<{
       // pdfjs-dist v5+ uses TextLayer class
       const TextLayerClass = (pdfjsLib as unknown as {
         TextLayer: new (opts: {
-          textContentSource: pdfjsLib.TextContent;
+      textContentSource: Awaited<ReturnType<typeof pdfPage.getTextContent>>;
           container: HTMLElement;
           viewport: pdfjsLib.PageViewport;
         }) => { render: () => Promise<void>; cancel: () => void };
@@ -233,7 +233,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound
           const page = await pdfDoc.getPage(i + 1);
           const textContent = await page.getTextContent();
           const fullText = textContent.items
-            .filter((item): item is pdfjsLib.TextItem => 'str' in item)
+            .filter((item): item is (typeof textContent.items[number] & { str: string }) => 'str' in item)
             .map(item => item.str)
             .join('');
 

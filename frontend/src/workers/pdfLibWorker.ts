@@ -16,6 +16,8 @@ type WorkerResponse =
   | { id: string; type: 'SUCCESS_MULTI'; buffers: ArrayBuffer[] }
   | { id: string; type: 'ERROR'; error: string };
 
+// Fix TS2769: TypeScript 6 requires explicit StructuredSerializeOptions for transfer
+// Use postMessage(data, { transfer: [...] }) instead of postMessage(data, [...])
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, payload } = event.data;
 
@@ -28,7 +30,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         page.setRotation(degrees(page.getRotation().angle + angle));
         const result = await pdfDoc.save();
         const response: WorkerResponse = { id, type: 'SUCCESS', buffer: result.buffer as ArrayBuffer };
-        self.postMessage(response, [result.buffer as ArrayBuffer]);
+        self.postMessage(response, { transfer: [result.buffer as ArrayBuffer] });
         break;
       }
 
@@ -38,7 +40,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         pdfDoc.removePage(pageIndex);
         const result = await pdfDoc.save();
         const response: WorkerResponse = { id, type: 'SUCCESS', buffer: result.buffer as ArrayBuffer };
-        self.postMessage(response, [result.buffer as ArrayBuffer]);
+        self.postMessage(response, { transfer: [result.buffer as ArrayBuffer] });
         break;
       }
 
@@ -52,7 +54,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         }
         const result = await mergedDoc.save();
         const response: WorkerResponse = { id, type: 'SUCCESS', buffer: result.buffer as ArrayBuffer };
-        self.postMessage(response, [result.buffer as ArrayBuffer]);
+        self.postMessage(response, { transfer: [result.buffer as ArrayBuffer] });
         break;
       }
 
@@ -74,7 +76,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         }
 
         const response: WorkerResponse = { id, type: 'SUCCESS_MULTI', buffers: resultBuffers };
-        self.postMessage(response, resultBuffers);
+        self.postMessage(response, { transfer: resultBuffers });
         break;
       }
     }
