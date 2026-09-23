@@ -419,6 +419,49 @@ body {
 }
 
 /* ============================================================
+   CONTEXT MENU — Right click menu
+   ============================================================ */
+.context-menu {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.12s ease forwards;
+  pointer-events: all;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+}
+.context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+/* ============================================================
+   VISUAL HIGHLIGHT — Text selection highlight effect
+   ============================================================ */
+.visual-highlight {
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* ============================================================
    VIEWER BACKGROUND — Checkerboard for transparent areas
    ============================================================ */
 .viewer-bg {

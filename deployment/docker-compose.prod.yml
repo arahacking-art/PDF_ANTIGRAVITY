@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  frontend_proxy:
+    # ✅ FIX CRÍTICO: Usar el multi-stage Dockerfile del frontend.
+    # Esto compila React con pnpm automáticamente y copia el resultado a Nginx.
+    # Ya no se necesita compilar manualmente ni montar el volumen ../frontend/dist.
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: came_pdf_frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Montar la configuración HTTPS de Nginx (con gzip y headers de seguridad)
+      - ./nginx/https.conf:/etc/nginx/conf.d/default.conf:ro
+      # Montar los certificados SSL generados por generate_ssl.sh
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      backend:
+        condition: service_healthy  # Esperar a que el backend esté listo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: came_pdf_backend
+    # ✅ No exponemos puertos hacia afuera: Nginx se comunica por la red interna de Docker
+    expose:
+      - "8000"
+    environment:
+      # ✅ Variable de entorno para activar restricciones de CORS en producción
+      - ENVIRONMENT=production
+      # Ajusta esta variable a la IP real del servidor antes de desplegar
+      - ALLOWED_ORIGIN=https://localhost
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # LibreOffice necesita tiempo para inicializar

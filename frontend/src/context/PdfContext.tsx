@@ -119,13 +119,27 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }
 
   const loadFromArrayBuffer = useCallback(async (ab: ArrayBuffer, fileName: string, fileObj?: File) => {
-    // Cleanup previous doc
-    if (pdfDocRef.current) {
-      pdfDocRef.current.destroy();
-      pdfDocRef.current = null;
-    }
+    const oldDoc = pdfDocRef.current;
+    pdfDocRef.current = null;
 
-    setState(prev => ({ ...prev, isLoading: true, loadProgress: 0, fileName, error: null, isEncrypted: false }));
+    // Clear document state immediately so the viewer unmounts and stops rendering
+    setState({
+      file: null,
+      arrayBuffer: null,
+      pdfDoc: null,
+      pageInfos: [],
+      numPages: 0,
+      fileName,
+      isLoading: true,
+      loadProgress: 0,
+      isEncrypted: false,
+      error: null,
+    });
+
+    // Destroy the old doc after the React render cycle finishes unmounting the viewer
+    if (oldDoc) {
+      setTimeout(() => oldDoc.destroy(), 0);
+    }
 
     try {
       // Compute hash for IndexedDB cache key
@@ -267,10 +281,9 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [loadFromArrayBuffer, state.fileName]);
 
   const clearFile = useCallback(() => {
-    if (pdfDocRef.current) {
-      pdfDocRef.current.destroy();
-      pdfDocRef.current = null;
-    }
+    const oldDoc = pdfDocRef.current;
+    pdfDocRef.current = null;
+
     setState({
       file: null,
       arrayBuffer: null,
@@ -283,6 +296,10 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isEncrypted: false,
       error: null,
     });
+
+    if (oldDoc) {
+      setTimeout(() => oldDoc.destroy(), 0);
+    }
   }, []);
 
   return (

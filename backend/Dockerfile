@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unpaper \
         libgl1 \
         libglib2.0-0 \
+        # ✅ FIX IMPORTANTE: Fuentes tipográficas para que LibreOffice no rompa el formato
+        fonts-liberation \
+        fonts-dejavu \
+        fonts-noto \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +31,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# En Railway, el puerto se inyecta dinámicamente a través de la variable de entorno $PORT
-# Si $PORT no existe (desarrollo local), usa 8000 por defecto0000.
-CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# ✅ HEALTHCHECK: Docker reiniciará el contenedor si FastAPI deja de responder
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+
+# ✅ FIX CRÍTICO: 1 worker. FastAPI es async y maneja múltiples peticiones con 1 proceso.
+# Múltiples workers multiplican los semáforos de concurrencia y desbordan la RAM.
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"

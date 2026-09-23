@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { usePdfContext } from '../../context/PdfContext';
-import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown, X, Copy, Edit3, MousePointer2, Info } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
 export type ZoomMode = 'fit-width' | 'fit-page' | 'custom';
@@ -337,6 +337,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   // Active pages: Set of page indices that should have a live canvas
   const [activePages, setActivePages] = useState<Set<number>>(new Set());
 
+  // Track the current pdfDoc to detect document changes.
+  // Updated synchronously during render (not in useEffect) so guards
+  // fire correctly even before effects run.
+  const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // Detect document change synchronously during render
+  const docChanged = pdfDocRef.current !== pdfDoc;
+  if (docChanged) {
+    pdfDocRef.current = pdfDoc;
+  }
+
   // Page refs for canvas and loaded page objects
   const canvasRefs   = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const pageRefs     = useRef<Map<number, pdfjsLib.PDFPageProxy>>(new Map());
@@ -350,12 +361,126 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   // Search match navigation
   const [searchMatchPage, setSearchMatchPage] = useState<number | null>(null);
 
+  // Context Menu & Selection Toolbar
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; text: string; range: Range } | null>(null);
+  
+  // Custom Visual Highlights: pageIndex -> array of rects (in percentages 0-100 to scale with zoom)
+  const [pageHighlights, setPageHighlights] = useState<Map<number, { left: number; top: number; width: number; height: number }[]>>(new Map());
+
+  // ── Context Menu Handlers ────────────────────────────────
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // ── Selection Toolbar Handlers ───────────────────────────
+  useEffect(() => {
+    const handleSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setSelectionBox(null);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const text = selection.toString();
+      
+      // Ensure selection is inside the viewer
+      const isInsideViewer = scrollContainerRef.current?.contains(range.commonAncestorContainer);
+      if (isInsideViewer && text.trim().length > 0) {
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const firstRect = rects[0];
+          setSelectionBox({
+            x: firstRect.left + (firstRect.width / 2),
+            y: firstRect.top - 8,
+            text,
+            range
+          });
+        }
+      } else {
+        setSelectionBox(null);
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelection);
+    return () => document.removeEventListener('selectionchange', handleSelection);
+  }, []);
+
+  const handleCopy = () => {
+    if (selectionBox) navigator.clipboard.writeText(selectionBox.text);
+    setSelectionBox(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleHighlight = () => {
+    if (selectionBox) {
+      const range = selectionBox.range;
+      const rects = Array.from(range.getClientRects());
+
+      setPageHighlights(prev => {
+        const next = new Map(prev);
+
+        rects.forEach(rect => {
+          // Ignore very thin rects (sometimes artifacts of selection)
+          if (rect.width < 2 || rect.height < 2) return;
+
+          // Find the page wrapper this rect belongs to
+          const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          const pageWrapper = elements.find(el => el.hasAttribute('data-page-index'));
+
+          if (pageWrapper) {
+            const pageIndex = parseInt(pageWrapper.getAttribute('data-page-index') || '0', 10);
+            const wrapperRect = pageWrapper.getBoundingClientRect();
+
+            // Store as percentages so they scale automatically when zooming
+            const pLeft = ((rect.left - wrapperRect.left) / wrapperRect.width) * 100;
+            const pTop = ((rect.top - wrapperRect.top) / wrapperRect.height) * 100;
+            const pWidth = (rect.width / wrapperRect.width) * 100;
+            const pHeight = (rect.height / wrapperRect.height) * 100;
+
+            const current = next.get(pageIndex) || [];
+            next.set(pageIndex, [...current, { left: pLeft, top: pTop, width: pWidth, height: pHeight }]);
+          }
+        });
+
+        return next;
+      });
+    }
+    setSelectionBox(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  // ── Clear all caches when pdfDoc changes ─────────────────
+  useEffect(() => {
+    if (docChanged) {
+      pageRefs.current.clear();
+      renderingRef.current.clear();
+      renderedRef.current.clear();
+      canvasRefs.current.clear();
+      setActivePages(new Set());
+      setSearchMatchPage(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfDoc]);
+
   // ── Get or load a PDFPageProxy ───────────────────────────
   const getPage = useCallback(async (pageIndex: number): Promise<pdfjsLib.PDFPageProxy | null> => {
     if (!pdfDoc) return null;
+    // Guard: don't use a cached page from a different/destroyed document
+    if (pdfDocRef.current !== pdfDoc) return null;
     if (pageRefs.current.has(pageIndex)) return pageRefs.current.get(pageIndex)!;
     try {
       const page = await pdfDoc.getPage(pageIndex + 1);
+      // Check again after the async call — pdfDoc might have changed
+      if (pdfDocRef.current !== pdfDoc) return null;
       pageRefs.current.set(pageIndex, page);
       return page;
     } catch {
@@ -366,6 +491,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   // ── Render a single page canvas ──────────────────────────
   const renderPage = useCallback(async (pageIndex: number) => {
     if (!pdfDoc || renderingRef.current.has(pageIndex)) return;
+    // Guard against stale document
+    if (pdfDocRef.current !== pdfDoc) return;
 
     // Skip if already rendered at this exact zoom
     if (renderedRef.current.get(pageIndex) === zoom) return;
@@ -378,6 +505,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     try {
       const page = await getPage(pageIndex);
       if (!page) return;
+      // Guard again after async getPage — pdfDoc may have changed
+      if (pdfDocRef.current !== pdfDoc) return;
 
       const viewport = page.getViewport({ scale: zoom });
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -393,7 +522,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       ctx.fillRect(0, 0, viewport.width, viewport.height);
 
       await page.render({ canvasContext: ctx, canvas, viewport }).promise;
-      renderedRef.current.set(pageIndex, zoom);
+
+      // Final guard: only record as rendered if doc hasn't changed
+      if (pdfDocRef.current === pdfDoc) {
+        renderedRef.current.set(pageIndex, zoom);
+      }
     } catch (e: unknown) {
       if ((e as {name?: string})?.name !== 'RenderingCancelledException') {
         console.warn(`Failed to render page ${pageIndex + 1}:`, e);
@@ -436,7 +569,15 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
               buffered.add(b);
             }
           });
-          setActivePages(new Set(buffered));
+          setActivePages(prev => {
+            // Unmounted pages MUST be removed from renderedRef so they repaint when they return
+            prev.forEach(idx => {
+              if (!buffered.has(idx)) {
+                renderedRef.current.delete(idx);
+              }
+            });
+            return new Set(buffered);
+          });
         }
       },
       {
@@ -561,6 +702,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
+        onContextMenu={handleContextMenu}
         className="flex-1 overflow-auto viewer-bg"
         style={{
           paddingTop:  showRulers ? `${rulerOffset + 16}px` : '16px',
@@ -629,6 +771,20 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   />
                 )}
 
+                {/* Custom Visual Highlights */}
+                {(pageHighlights.get(pageInfo.index) || []).map((hRect, i) => (
+                  <div
+                    key={i}
+                    className="absolute pointer-events-none mix-blend-multiply bg-[#FFE100]/40 rounded-sm"
+                    style={{
+                      left: `${hRect.left}%`,
+                      top: `${hRect.top}%`,
+                      width: `${hRect.width}%`,
+                      height: `${hRect.height}%`
+                    }}
+                  />
+                ))}
+
                 {/* Page number badge */}
                 <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full select-none pointer-events-none">
                   {pageInfo.index + 1} / {numPages}
@@ -638,6 +794,69 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           })}
         </div>
       </div>
+
+      {/* ── Selection Mini-Toolbar ──────────────────────── */}
+      {selectionBox && (
+        <div
+          className="mini-toolbar fixed"
+          style={{
+            left: selectionBox.x,
+            top: selectionBox.y,
+            transform: 'translate(-50%, -100%)',
+          }}
+          onMouseDown={(e) => e.preventDefault()} // Prevent losing selection when clicking buttons
+        >
+          <button onClick={handleHighlight} title="Resaltar texto">
+            <Edit3 className="w-3.5 h-3.5 text-yellow-500" />
+            Resaltar
+          </button>
+          <div className="separator" />
+          <button onClick={handleCopy} title="Copiar al portapapeles">
+            <Copy className="w-3.5 h-3.5 text-blue-400" />
+            Copiar
+          </button>
+        </div>
+      )}
+
+      {/* ── Context Menu ────────────────────────────────── */}
+      {contextMenu && (
+        <div
+          className="context-menu fixed z-[9999]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button onClick={() => {
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed) {
+              navigator.clipboard.writeText(sel.toString());
+              sel.removeAllRanges();
+            }
+            setContextMenu(null);
+          }}>
+            <Copy className="w-4 h-4 text-[var(--text-secondary)]" /> Copiar
+          </button>
+          <div className="mx-2 my-1 h-px bg-[var(--border-medium)]" />
+          <button onClick={() => {
+            const range = document.createRange();
+            if (scrollContainerRef.current) {
+              range.selectNodeContents(scrollContainerRef.current);
+              const sel = window.getSelection();
+              sel?.removeAllRanges();
+              sel?.addRange(range);
+            }
+            setContextMenu(null);
+          }}>
+            <MousePointer2 className="w-4 h-4 text-[var(--text-secondary)]" /> Seleccionar todo
+          </button>
+          <div className="mx-2 my-1 h-px bg-[var(--border-medium)]" />
+          <button onClick={() => {
+            alert(`Documento: ${pdfDoc.numPages} páginas.\nVisualizando en PDF Antigravity.`);
+            setContextMenu(null);
+          }}>
+            <Info className="w-4 h-4 text-[var(--text-secondary)]" /> Propiedades...
+          </button>
+        </div>
+      )}
     </div>
   );
 };

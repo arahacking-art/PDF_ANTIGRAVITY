@@ -1,0 +1,5 @@
+FROM nginx:alpine
+
+# Nginx por defecto no incluye .mjs -> lo sirve como octet-stream -> el browser lo rechaza.
+# Añadimos mjs a la línea de application/javascript en mime.types para que los Web Workers de pdf.js funcionen.
+RUN sed -i 's|application/javascript\s*js;|application/javascript js mjs;|' /etc/nginx/mime.types

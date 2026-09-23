@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exception_handlers import http_exception_handler
 from contextlib import asynccontextmanager
 import pikepdf
 import pymupdf  # PyMuPDF (fitz)
@@ -18,7 +19,12 @@ import os
 import subprocess
 import base64
 import json
+import logging
 from concurrent.futures import ProcessPoolExecutor
+
+# ─── Logger (registra errores internos sin exponerlos al cliente) ──────────────
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("pdf-antigravity")
 
 # ─── Semáforos de Concurrencia ────────────────────────────────────────────────
 _ocr_semaphore: asyncio.Semaphore | None = None
@@ -41,20 +47,35 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ✅ FIX IMPORTANTE: CORS seguro — leer origen desde variable de entorno.
+# En producción, ALLOWED_ORIGIN se inyecta en docker-compose.prod.yml.
+# En desarrollo local, se permite localhost por defecto.
+_allowed_origin = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[_allowed_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Original-Size", "X-Compressed-Size", "X-Reduction-Percent", "X-Result-Size"],
 )
 
+# ✅ FIX IMPORTANTE: Handler global de errores.
+# Loguea el detalle completo internamente pero solo envía un mensaje genérico al cliente.
+# Esto previene exponer rutas de Linux (/tmp/...) o stack traces al usuario.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Error no controlado en {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor. Por favor, intente de nuevo."},
+    )
 
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to PDF Antigravity API v2.0"}
+
 
 
 # ─── SEGURIDAD ────────────────────────────────────────────────────────────────
