@@ -263,7 +263,7 @@ function Workspace() {
           <div className="w-6 h-6 rounded-md flex items-center justify-center bg-[#CC0000] shadow-sm">
             <FileText className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-white font-semibold text-sm tracking-tight">PDF Antigravity</span>
+          <span className="text-white font-semibold text-sm tracking-tight">CamePDF</span>
           <span className="text-[#666] text-[10px] border border-[#444] rounded px-1.5 py-0.5 font-normal leading-none">
             Suite
           </span>

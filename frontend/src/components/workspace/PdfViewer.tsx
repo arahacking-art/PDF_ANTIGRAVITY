@@ -850,7 +850,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           </button>
           <div className="mx-2 my-1 h-px bg-[var(--border-medium)]" />
           <button onClick={() => {
-            alert(`Documento: ${pdfDoc.numPages} páginas.\nVisualizando en PDF Antigravity.`);
+            alert(`Documento: ${pdfDoc.numPages} páginas.\nVisualizando en CamePDF.`);
             setContextMenu(null);
           }}>
             <Info className="w-4 h-4 text-[var(--text-secondary)]" /> Propiedades...

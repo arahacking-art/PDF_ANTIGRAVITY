@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     # (cleanup si fuera necesario)
 
 app = FastAPI(
-    title="PDF Antigravity API",
+    title="CamePDF API",
     description="Suite empresarial de manipulación de PDFs. Procesos pesados asíncronos con semáforos de concurrencia.",
     version="3.1.0",
     lifespan=lifespan,
