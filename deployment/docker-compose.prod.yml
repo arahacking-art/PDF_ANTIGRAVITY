@@ -34,10 +34,9 @@ services:
       - "8000"
     environment:
       - ENVIRONMENT=production
-      # ✅ INSTRUCCIÓN: Cambia este valor a la IP actual del servidor.
-      # Ejemplo: ALLOWED_ORIGIN=https://192.168.1.75
-      # Si la IP cambia frecuentemente en tu red, considera asignar IP fija al servidor.
-      - ALLOWED_ORIGIN=https://localhost
+      # ✅ La IP se lee del archivo deployment/.env (ignorado por Git)
+      # Crea ese archivo en el servidor: echo "ALLOWED_ORIGIN=https://10.1.0.200" > deployment/.env
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-https://localhost}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]

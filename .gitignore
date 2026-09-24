@@ -1,0 +1,16 @@
+# Archivos de entorno locales — NUNCA subir al repositorio
+deployment/.env
+.env
+.env.local
+.env.production
+
+# Certificados SSL — generados localmente en el servidor
+deployment/nginx/ssl/
+
+# Dependencias
+node_modules/
+__pycache__/
+*.pyc
+
+# Build del frontend
+frontend/dist/
