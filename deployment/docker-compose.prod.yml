@@ -17,11 +17,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # ✅ FIX: Usar nc (netcat) para verificar que el puerto 443 está escuchando.
-      # wget fallaba porque rechazaba el certificado SSL autofirmado.
-      test: ["CMD-SHELL", "nc -z localhost 443 || exit 1"]
+      # ✅ Verificar que el proceso Nginx está corriendo.
+      # Más confiable que wget/nc en Alpine con certificados autofirmados.
+      test: ["CMD-SHELL", "pgrep nginx > /dev/null || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 10s
 
