@@ -1,0 +1,44 @@
+# ─── Backend .dockerignore ────────────────────────────────────────────────────
+# Excluye archivos innecesarios del contexto de build de Docker.
+# Reduce el tamaño del contexto, acelera los builds y reduce la superficie de ataque.
+
+# Cache de Python — nunca deben ir a la imagen
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env*
+
+# Control de versiones
+.git/
+.gitignore
+.gitattributes
+
+# Documentación y archivos de desarrollo
+*.md
+README*
+docs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# Logs
+*.log

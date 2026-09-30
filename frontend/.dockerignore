@@ -1,0 +1,33 @@
+# ─── Frontend .dockerignore ───────────────────────────────────────────────────
+# Excluye archivos innecesarios del contexto de build de Docker.
+# El stage 1 (node:22-alpine) solo necesita package.json + src/ para el build.
+
+# Dependencias — se instalan dentro del contenedor vía pnpm install
+node_modules/
+
+# Build output — se genera dentro del contenedor
+dist/
+
+# Control de versiones
+.git/
+.gitignore
+.gitattributes
+
+# Documentación
+*.md
+README*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Variables de entorno locales
+.env*
+
+# Lockfile alternativo (el proyecto usa pnpm)
+package-lock.json

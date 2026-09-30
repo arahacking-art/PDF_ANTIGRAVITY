@@ -16,6 +16,7 @@ from pptx.util import Inches
 from PIL import Image
 import tempfile
 import os
+import re
 import subprocess
 import base64
 import json
@@ -43,13 +44,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CamePDF API",
     description="Suite empresarial de manipulación de PDFs. Procesos pesados asíncronos con semáforos de concurrencia.",
-    version="3.1.0",
+    version="3.2.0",
     lifespan=lifespan,
 )
 
-# ✅ FIX IMPORTANTE: CORS seguro — leer origen desde variable de entorno.
-# En producción, ALLOWED_ORIGIN se inyecta en docker-compose.prod.yml.
-# En desarrollo local, se permite localhost por defecto.
+# ✅ CORS seguro — leer origen desde variable de entorno.
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
@@ -60,9 +59,7 @@ app.add_middleware(
     expose_headers=["X-Original-Size", "X-Compressed-Size", "X-Reduction-Percent", "X-Result-Size"],
 )
 
-# ✅ FIX IMPORTANTE: Handler global de errores.
-# Loguea el detalle completo internamente pero solo envía un mensaje genérico al cliente.
-# Esto previene exponer rutas de Linux (/tmp/...) o stack traces al usuario.
+# ✅ Handler global de errores — loguea internamente, nunca expone detalles al cliente.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Error no controlado en {request.url}: {exc}", exc_info=True)
@@ -72,9 +69,30 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+# ─── UTILIDADES DE SEGURIDAD ──────────────────────────────────────────────────
+
+def safe_filename(raw: str | None, default: str = "output") -> str:
+    """
+    [SEGURIDAD] Sanitiza el nombre de archivo para uso en:
+    1. Headers HTTP Content-Disposition (previene header injection)
+    2. os.path.join (previene path traversal)
+
+    - os.path.basename: elimina cualquier ruta (ej. '../../etc/passwd' → 'passwd')
+    - re.sub: elimina caracteres de control y CR/LF que romperían el header HTTP
+    - strip/fallback: evita nombres vacíos o que empiecen con punto
+    """
+    name = os.path.basename(raw or default).strip()
+    name = re.sub(r'[\r\n\x00-\x1f"\\]', '_', name)  # Elimina chars peligrosos en headers
+    if not name or name.startswith('.'):
+        name = default
+    return name
+
+
+# ─── ENDPOINTS ────────────────────────────────────────────────────────────────
+
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to PDF Antigravity API v2.0"}
+    return {"message": "Welcome to CamePDF API v3.2.0"}
 
 
 
@@ -89,12 +107,14 @@ async def protect_pdf(file: UploadFile = File(...), password: str = Form(...)):
         with pikepdf.open(pdf_in) as pdf:
             pdf.save(pdf_out, encryption=pikepdf.Encryption(owner=password, user=password, R=6))
         pdf_out.seek(0)
+        safe_name = safe_filename(file.filename, "protegido.pdf")
         return StreamingResponse(pdf_out, media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="protegido_{file.filename}"'})
+            headers={"Content-Disposition": f'attachment; filename="protegido_{safe_name}"'})
     except pikepdf.PasswordError:
         raise HTTPException(400, "El PDF ya está protegido o está dañado.")
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.error(f"Error en /api/protect: {e}", exc_info=True)
+        raise HTTPException(500, "Error al proteger el PDF. Intenta de nuevo.")
 
 
 @app.post("/api/unlock")
@@ -106,12 +126,14 @@ async def unlock_pdf(file: UploadFile = File(...), password: str = Form(...)):
         with pikepdf.open(pdf_in, password=password) as pdf:
             pdf.save(pdf_out)
         pdf_out.seek(0)
+        safe_name = safe_filename(file.filename, "desbloqueado.pdf")
         return StreamingResponse(pdf_out, media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="desbloqueado_{file.filename}"'})
+            headers={"Content-Disposition": f'attachment; filename="desbloqueado_{safe_name}"'})
     except pikepdf.PasswordError:
         raise HTTPException(401, "Contraseña incorrecta. Verifica e intenta de nuevo.")
     except Exception as e:
-        raise HTTPException(500, str(e))
+        logger.error(f"Error en /api/unlock: {e}", exc_info=True)
+        raise HTTPException(500, "Error al desbloquear el PDF. Intenta de nuevo.")
 
 
 # ─── COMPRIMIR ────────────────────────────────────────────────────────────────
@@ -121,6 +143,11 @@ async def compress_pdf(file: UploadFile = File(...), mode: str = Form("standard"
     """
     Comprime el PDF con múltiples estrategias. Procesado asíncronamente para no bloquear.
     """
+    # ✅ Validar parámetro mode
+    VALID_MODES = {"standard", "aggressive"}
+    if mode not in VALID_MODES:
+        raise HTTPException(400, f"Modo inválido '{mode}'. Opciones válidas: {', '.join(VALID_MODES)}")
+
     try:
         contents = await file.read()
         original_size = len(contents)
@@ -194,20 +221,24 @@ async def compress_pdf(file: UploadFile = File(...), mode: str = Form("standard"
             
         best_result.seek(0)
         reduction_pct = max(0.0, (original_size - best_size) / original_size * 100)
+        safe_name = safe_filename(file.filename, "comprimido.pdf")
 
         return StreamingResponse(
             best_result,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
+                "Content-Disposition": f'attachment; filename="comprimido_{safe_name}"',
                 "X-Original-Size": str(original_size),
                 "X-Compressed-Size": str(best_size),
                 "X-Reduction-Percent": f"{reduction_pct:.1f}",
                 "Access-Control-Expose-Headers": "X-Original-Size,X-Compressed-Size,X-Reduction-Percent",
             },
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"Error al comprimir: {str(e)}")
+        logger.error(f"Error en /api/compress: {e}", exc_info=True)
+        raise HTTPException(500, "Error al comprimir el PDF. Intenta de nuevo.")
 
 
 # ─── CONVERSIONES ─────────────────────────────────────────────────────────────
@@ -233,14 +264,15 @@ async def pdf_to_word(file: UploadFile = File(...)):
         async with _convert_semaphore:
             docx_bytes = await asyncio.to_thread(process_word)
 
-        docx_name = file.filename.replace(".pdf", ".docx") if file.filename else "output.docx"
+        safe_name = safe_filename(file.filename, "output.pdf").replace(".pdf", ".docx")
         return StreamingResponse(
             io.BytesIO(docx_bytes),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{docx_name}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
     except Exception as e:
-        raise HTTPException(500, f"Error al convertir a Word: {str(e)}")
+        logger.error(f"Error en /api/to-word: {e}", exc_info=True)
+        raise HTTPException(500, "Error al convertir a Word. Intenta de nuevo.")
 
 
 @app.post("/api/to-pptx")
@@ -273,14 +305,15 @@ async def pdf_to_pptx(file: UploadFile = File(...)):
         async with _convert_semaphore:
             pptx_bytes = await asyncio.to_thread(process_pptx)
 
-        pptx_name = file.filename.replace(".pdf", ".pptx") if file.filename else "output.pptx"
+        safe_name = safe_filename(file.filename, "output.pdf").replace(".pdf", ".pptx")
         return StreamingResponse(
             io.BytesIO(pptx_bytes),
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f'attachment; filename="{pptx_name}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
     except Exception as e:
-        raise HTTPException(500, f"Error al convertir a PowerPoint: {str(e)}")
+        logger.error(f"Error en /api/to-pptx: {e}", exc_info=True)
+        raise HTTPException(500, "Error al convertir a PowerPoint. Intenta de nuevo.")
 
 
 @app.post("/api/to-excel")
@@ -319,14 +352,15 @@ async def pdf_to_excel(file: UploadFile = File(...)):
         async with _convert_semaphore:
             xlsx_out = await asyncio.to_thread(process_excel)
 
-        xlsx_name = file.filename.replace(".pdf", ".xlsx") if file.filename else "output.xlsx"
+        safe_name = safe_filename(file.filename, "output.pdf").replace(".pdf", ".xlsx")
         return StreamingResponse(
             xlsx_out,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{xlsx_name}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
     except Exception as e:
-        raise HTTPException(500, f"Error al convertir a Excel: {str(e)}")
+        logger.error(f"Error en /api/to-excel: {e}", exc_info=True)
+        raise HTTPException(500, "Error al convertir a Excel. Intenta de nuevo.")
 
 
 @app.post("/api/to-jpg")
@@ -335,11 +369,14 @@ async def pdf_to_jpg(file: UploadFile = File(...), dpi: int = Form(150)):
     Convierte páginas del PDF a imágenes JPG.
     1 página → devuelve JPG directo.
     Múltiples páginas → devuelve un ZIP con todos los JPGs.
-    Usa asyncio.to_thread para no bloquear el event loop.
     """
+    # ✅ Clamp DPI para prevenir DoS (dpi=99999 generaría imágenes de GBs en RAM)
+    dpi = max(72, min(dpi, 300))
+
     try:
         contents = await file.read()
-        base_name = file.filename.replace(".pdf", "") if file.filename else "pdf"
+        safe_name = safe_filename(file.filename, "output.pdf")
+        base_name = os.path.splitext(safe_name)[0]
 
         def process_jpg():
             doc = pymupdf.open(stream=contents, filetype="pdf")
@@ -375,8 +412,8 @@ async def pdf_to_jpg(file: UploadFile = File(...), dpi: int = Form(150)):
             headers={"Content-Disposition": f'attachment; filename="{base_name}_imagenes.zip"'},
         )
     except Exception as e:
-        raise HTTPException(500, f"Error al convertir a JPG: {str(e)}")
-
+        logger.error(f"Error en /api/to-jpg: {e}", exc_info=True)
+        raise HTTPException(500, "Error al convertir a JPG. Intenta de nuevo.")
 
 
 # ─── CENSURAR (REDACTAR) ──────────────────────────────────────────────────────
@@ -409,12 +446,14 @@ async def redact_pdf(file: UploadFile = File(...), terms: str = Form(...)):
         doc.save(pdf_out)
         doc.close()
         pdf_out.seek(0)
+        safe_name = safe_filename(file.filename, "documento.pdf")
         return StreamingResponse(pdf_out, media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="censurado_{file.filename}"'})
+            headers={"Content-Disposition": f'attachment; filename="censurado_{safe_name}"'})
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Error al censurar: {str(e)}")
+        logger.error(f"Error en /api/redact: {e}", exc_info=True)
+        raise HTTPException(500, "Error al censurar el PDF. Intenta de nuevo.")
 
 
 # ─── RENDERIZADO VISUAL ───────────────────────────────────────────────────────
@@ -428,6 +467,9 @@ async def render_pages(
     Renderiza cada página del PDF como PNG en base64.
     Devuelve dimensiones originales (PDF points) y de renderizado (px).
     """
+    # ✅ Clamp scale para prevenir DoS (scale=100 consumiría toda la RAM)
+    scale = max(0.5, min(scale, 3.0))
+
     try:
         contents = await file.read()
         doc = pymupdf.open(stream=contents, filetype="pdf")
@@ -447,7 +489,8 @@ async def render_pages(
         doc.close()
         return JSONResponse({"pages": pages_data, "pageCount": len(pages_data)})
     except Exception as e:
-        raise HTTPException(500, f"Error al renderizar páginas: {str(e)}")
+        logger.error(f"Error en /api/render-pages: {e}", exc_info=True)
+        raise HTTPException(500, "Error al renderizar las páginas. Intenta de nuevo.")
 
 
 @app.post("/api/redact-visual")
@@ -458,23 +501,34 @@ async def redact_visual(
     """
     Censura áreas en el PDF usando coordenadas relativas (ratios).
     x1r, y1r, x2r, y2r son proporción del ancho/alto de la página (0.0 a 1.0).
-    El sistema de coordenadas de PyMuPDF tiene origen en la esquina superior izquierda.
     """
+    # ✅ Validar JSON antes de procesarlo
+    try:
+        redact_areas = json.loads(areas)
+        if not isinstance(redact_areas, list):
+            raise HTTPException(400, "El parámetro 'areas' debe ser una lista JSON.")
+    except json.JSONDecodeError:
+        raise HTTPException(400, "JSON malformado en el parámetro 'areas'.")
+
     try:
         contents = await file.read()
-        redact_areas = json.loads(areas)
         doc = pymupdf.open(stream=contents, filetype="pdf")
 
         for area in redact_areas:
+            # ✅ Validar campos requeridos
+            required = {"page", "x1r", "y1r", "x2r", "y2r"}
+            if not required.issubset(area.keys()):
+                continue
             page_idx = int(area["page"])
             if 0 <= page_idx < len(doc):
                 page = doc[page_idx]
                 pw = page.rect.width
                 ph = page.rect.height
-                x1 = float(area["x1r"]) * pw
-                y1 = float(area["y1r"]) * ph
-                x2 = float(area["x2r"]) * pw
-                y2 = float(area["y2r"]) * ph
+                # ✅ Clamp ratios entre 0 y 1
+                x1 = max(0.0, min(1.0, float(area["x1r"]))) * pw
+                y1 = max(0.0, min(1.0, float(area["y1r"]))) * ph
+                x2 = max(0.0, min(1.0, float(area["x2r"]))) * pw
+                y2 = max(0.0, min(1.0, float(area["y2r"]))) * ph
                 page.add_redact_annot(pymupdf.Rect(x1, y1, x2, y2), fill=(0, 0, 0))
                 page.apply_redactions()
 
@@ -482,12 +536,14 @@ async def redact_visual(
         doc.save(pdf_out)
         doc.close()
         pdf_out.seek(0)
+        safe_name = safe_filename(file.filename, "documento.pdf")
         return StreamingResponse(pdf_out, media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="censurado_{file.filename}"'})
+            headers={"Content-Disposition": f'attachment; filename="censurado_{safe_name}"'})
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Error al censurar visualmente: {str(e)}")
+        logger.error(f"Error en /api/redact-visual: {e}", exc_info=True)
+        raise HTTPException(500, "Error al censurar el PDF. Intenta de nuevo.")
 
 
 @app.post("/api/sign-visual")
@@ -500,21 +556,32 @@ async def sign_visual(
     Incrusta la imagen de firma en la página y posición indicadas.
     Las coordenadas son ratios (0-1) del ancho/alto de la página.
     """
+    # ✅ Validar JSON antes de procesarlo
+    try:
+        pos = json.loads(position)
+        required = {"page", "x_ratio", "y_ratio", "w_ratio", "h_ratio"}
+        if not isinstance(pos, dict) or not required.issubset(pos.keys()):
+            raise HTTPException(400, "El parámetro 'position' debe ser un objeto JSON con campos: page, x_ratio, y_ratio, w_ratio, h_ratio.")
+    except json.JSONDecodeError:
+        raise HTTPException(400, "JSON malformado en el parámetro 'position'.")
+
     try:
         pdf_bytes = await file.read()
         sig_bytes = await signature.read()
-        pos = json.loads(position)
 
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         page_idx = int(pos["page"])
+        if page_idx < 0 or page_idx >= len(doc):
+            raise HTTPException(400, f"Índice de página inválido: {page_idx}.")
         page = doc[page_idx]
 
         pw = page.rect.width
         ph = page.rect.height
-        x = float(pos["x_ratio"]) * pw
-        y = float(pos["y_ratio"]) * ph
-        w = float(pos["w_ratio"]) * pw
-        h = float(pos["h_ratio"]) * ph
+        # ✅ Clamp ratios entre 0 y 1
+        x = max(0.0, min(1.0, float(pos["x_ratio"]))) * pw
+        y = max(0.0, min(1.0, float(pos["y_ratio"]))) * ph
+        w = max(0.01, min(1.0, float(pos["w_ratio"]))) * pw
+        h = max(0.01, min(1.0, float(pos["h_ratio"]))) * ph
 
         rect = pymupdf.Rect(x, y, x + w, y + h)
         page.insert_image(rect, stream=sig_bytes, keep_proportion=True)
@@ -523,12 +590,14 @@ async def sign_visual(
         doc.save(pdf_out)
         doc.close()
         pdf_out.seek(0)
+        safe_name = safe_filename(file.filename, "documento.pdf")
         return StreamingResponse(pdf_out, media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="firmado_{file.filename}"'})
+            headers={"Content-Disposition": f'attachment; filename="firmado_{safe_name}"'})
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Error al firmar visualmente: {str(e)}")
+        logger.error(f"Error en /api/sign-visual: {e}", exc_info=True)
+        raise HTTPException(500, "Error al firmar el PDF. Intenta de nuevo.")
 
 
 # ─── OFFICE → PDF ─────────────────────────────────────────────────────────────
@@ -547,7 +616,10 @@ async def office_to_pdf(file: UploadFile = File(...)):
         ".txt",
     }
 
-    filename = file.filename or "documento"
+    # ✅ [CRÍTICO] Sanitizar nombre de archivo ANTES de cualquier operación de sistema de archivos.
+    # os.path.basename previene path traversal: "../../../etc/passwd" → "passwd"
+    raw_filename = file.filename or "documento"
+    filename = safe_filename(raw_filename, "documento")
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
@@ -562,6 +634,7 @@ async def office_to_pdf(file: UploadFile = File(...)):
 
         def process_office():
             with tempfile.TemporaryDirectory() as tmpdir:
+                # ✅ Usar el nombre sanitizado, nunca el original del usuario
                 input_path = os.path.join(tmpdir, filename)
                 with open(input_path, "wb") as f:
                     f.write(contents)
@@ -575,12 +648,13 @@ async def office_to_pdf(file: UploadFile = File(...)):
                     raise RuntimeError("TIMEOUT")
                 
                 if result.returncode != 0:
-                    raise RuntimeError(f"LibreOffice falló al convertir: {result.stderr.strip() or 'Error desconocido'}")
+                    logger.error(f"LibreOffice error: {result.stderr}")
+                    raise RuntimeError("LIBREOFFICE_FAILED")
                 
                 pdf_name = os.path.splitext(filename)[0] + ".pdf"
                 pdf_path = os.path.join(tmpdir, pdf_name)
                 if not os.path.exists(pdf_path):
-                    raise RuntimeError("LibreOffice no generó el PDF. Verifica que el archivo no esté dañado.")
+                    raise RuntimeError("OUTPUT_NOT_FOUND")
                 
                 with open(pdf_path, "rb") as f:
                     return f.read(), pdf_name
@@ -588,15 +662,18 @@ async def office_to_pdf(file: UploadFile = File(...)):
         async with _libreoffice_semaphore:
             pdf_bytes, pdf_name = await asyncio.to_thread(process_office)
 
+        safe_pdf_name = safe_filename(pdf_name, "output.pdf")
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{pdf_name}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_pdf_name}"'},
         )
     except Exception as e:
-        if "TIMEOUT" in str(e):
+        err_str = str(e)
+        if "TIMEOUT" in err_str:
             raise HTTPException(504, "La conversión tardó demasiado (límite: 120 segundos). El archivo puede ser muy complejo.")
-        raise HTTPException(500, f"Error al convertir: {str(e)}")
+        logger.error(f"Error en /api/office-to-pdf: {e}", exc_info=True)
+        raise HTTPException(500, "Error al convertir el archivo. Intenta de nuevo.")
 
 
 # ─── OCR ──────────────────────────────────────────────────────────────────────
@@ -627,7 +704,8 @@ async def ocr_pdf(
         async with _ocr_semaphore:
             result_bytes = await asyncio.to_thread(process_ocr)
 
-        filename_out = file.filename.replace(".pdf", "_OCR.pdf") if file.filename else "documento_OCR.pdf"
+        safe_name = safe_filename(file.filename, "documento.pdf")
+        filename_out = os.path.splitext(safe_name)[0] + "_OCR.pdf"
         return StreamingResponse(
             io.BytesIO(result_bytes),
             media_type="application/pdf",
@@ -643,7 +721,8 @@ async def ocr_pdf(
     except ocrmypdf.exceptions.EncryptedPdfError:
         raise HTTPException(400, "El PDF está protegido con contraseña. Quita la contraseña primero.")
     except Exception as e:
-        raise HTTPException(500, f"Error durante el OCR: {str(e)}")
+        logger.error(f"Error en /api/ocr: {e}", exc_info=True)
+        raise HTTPException(500, "Error durante el OCR. Intenta de nuevo.")
 
 
 @app.post("/api/ocr-force")
@@ -672,12 +751,12 @@ async def ocr_pdf_force(
         async with _ocr_semaphore:
             result_bytes = await asyncio.to_thread(process_ocr_force)
 
-        filename_out = file.filename.replace(".pdf", "_OCR.pdf") if file.filename else "documento_OCR.pdf"
+        safe_name = safe_filename(file.filename, "documento.pdf")
+        filename_out = os.path.splitext(safe_name)[0] + "_OCR.pdf"
         return StreamingResponse(
             io.BytesIO(result_bytes), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename_out}"'},
         )
     except Exception as e:
-        raise HTTPException(500, f"Error durante el OCR forzado: {str(e)}")
-
-
+        logger.error(f"Error en /api/ocr-force: {e}", exc_info=True)
+        raise HTTPException(500, "Error durante el OCR forzado. Intenta de nuevo.")
