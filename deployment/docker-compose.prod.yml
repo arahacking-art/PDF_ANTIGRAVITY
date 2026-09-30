@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend_proxy:
     build:
@@ -16,8 +14,14 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    # ✅ [11] Límites de recursos — previene que Nginx monopolice el servidor
+    mem_limit: 256m
+    cpus: 0.5
+    # ✅ Hardening: previene escalada de privilegios dentro del contenedor
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      # ✅ Verificar que el proceso Nginx está corriendo.
+      # Verificar que el proceso Nginx está corriendo.
       # Más confiable que wget/nc en Alpine con certificados autofirmados.
       test: ["CMD-SHELL", "pgrep nginx > /dev/null || exit 1"]
       interval: 30s
@@ -38,6 +42,20 @@ services:
       # Crea ese archivo en el servidor: echo "ALLOWED_ORIGIN=https://10.1.0.200" > deployment/.env
       - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-https://localhost}
     restart: unless-stopped
+    # ✅ [11] Límites de recursos — previene DoS por conversiones pesadas de PDF.
+    # Con 8GB de RAM en el servidor, asignamos 5GB al backend para soportar
+    # picos de carga simultánea sin OOMKill:
+    #   - 2× LibreOffice (DOCX→PDF): hasta 800MB c/u = 1.6GB
+    #   - 2× OCR Tesseract:          hasta 600MB c/u = 1.2GB
+    #   - Python baseline + buffers:                  = ~300MB
+    #   - Total peak estimado:                        ≈ 3-4GB
+    # Dejamos 5GB como límite con margen de seguridad.
+    # SO Ubuntu + Nginx = ~2.5GB → total: 5 + 2.5 = 7.5GB de 8GB disponibles.
+    mem_limit: 5g
+    cpus: 6.0
+    # ✅ Hardening: previene escalada de privilegios dentro del contenedor
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 60s

@@ -1,16 +1,72 @@
-# Archivos de entorno locales — NUNCA subir al repositorio
+# ─── CamePDF — .gitignore ─────────────────────────────────────────────────────
+
+# ─── Secretos y configuración local (NUNCA subir al repo) ─────────────────────
 deployment/.env
 .env
 .env.local
 .env.production
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Certificados SSL — generados localmente en el servidor
+# ─── Certificados SSL — generados localmente en el servidor ───────────────────
 deployment/nginx/ssl/
 
-# Dependencias
+# ─── Dependencias ─────────────────────────────────────────────────────────────
 node_modules/
-__pycache__/
-*.pyc
+frontend/node_modules/
 
-# Build del frontend
+# ─── Build outputs ────────────────────────────────────────────────────────────
 frontend/dist/
+dist/
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+backend/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+
+# ─── Entornos virtuales Python ────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+backend/venv/
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── IDEs y editores ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Sistema Operativo ────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Lockfiles alternativos (el proyecto usa pnpm) ───────────────────────────
+frontend/package-lock.json
+yarn.lock
+
+# ─── Archivos temporales ─────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.swp

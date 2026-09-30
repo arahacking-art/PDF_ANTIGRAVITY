@@ -1,11 +1,18 @@
-fastapi
-uvicorn
-pikepdf
-python-multipart
-pdf2docx
-pymupdf
-python-pptx
-pdfplumber
-openpyxl
-Pillow
-ocrmypdf
+# ─── Backend Python Dependencies ──────────────────────────────────────────────
+# Versiones pinneadas con == para garantizar builds reproducibles.
+# Para actualizar: ejecutar `pip freeze` en el contenedor y revisar cada cambio.
+#
+# CÓMO OBTENER LAS VERSIONES EXACTAS DEL CONTENEDOR EN PRODUCCIÓN:
+#   docker compose -f deployment/docker-compose.prod.yml exec backend pip freeze
+#
+fastapi==0.115.12
+uvicorn==0.34.3
+pikepdf==9.5.0
+python-multipart==0.0.20
+pdf2docx==0.5.8
+pymupdf==1.25.5
+python-pptx==1.0.2
+pdfplumber==0.11.6
+openpyxl==3.1.5
+Pillow==11.1.0
+ocrmypdf==16.10.1
