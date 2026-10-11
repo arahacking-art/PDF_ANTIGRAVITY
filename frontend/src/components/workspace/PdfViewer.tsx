@@ -1,9 +1,10 @@
 import React, {
-  useRef, useEffect, useCallback, useState, useMemo
+  useRef, useEffect, useLayoutEffect, useCallback, useState, useMemo
 } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { usePdfContext } from '../../context/PdfContext';
-import { Search, ChevronUp, ChevronDown, X, Copy, Edit3, MousePointer2, Info } from 'lucide-react';
+import type { ViewRect } from '../../utils/highlight';
+import { Search, ChevronUp, ChevronDown, X, Copy, Edit3, MousePointer2, Info, Printer } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────
 export type ZoomMode = 'fit-width' | 'fit-page' | 'custom';
@@ -21,6 +22,8 @@ interface PdfViewerProps {
   showSearch?: boolean;
   /** Callback to close the search panel */
   onCloseSearch?: () => void;
+  /** Imprime el documento (entrada del menú contextual) */
+  onPrint?: () => void;
 }
 
 // Number of pages to keep rendered above/below visible area
@@ -127,8 +130,15 @@ const Ruler: React.FC<{
 const TextLayer: React.FC<{
   pdfPage: pdfjsLib.PDFPageProxy;
   viewport: pdfjsLib.PageViewport;
-}> = ({ pdfPage, viewport }) => {
+  /** Texto buscado (Ctrl+F) que se marca en la página */
+  searchTerm?: string;
+  /** Cambia cada vez que se navega a esta página desde la búsqueda: centra la primera coincidencia */
+  focusToken?: number;
+}> = ({ pdfPage, viewport, searchTerm = '', focusToken }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Se incrementa al terminar de dibujar la capa, para volver a marcar la búsqueda
+  const [renderCount, setRenderCount] = useState(0);
+  const handledFocusRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -155,7 +165,7 @@ const TextLayer: React.FC<{
         // v5+ API
         const layer = new TextLayerClass({ textContentSource: textContent, container, viewport });
         textLayerInstance = layer;
-        layer.render().catch(() => {});
+        layer.render().then(() => { if (!cancelled) setRenderCount(c => c + 1); }).catch(() => {});
       } else {
         // Fallback: manual span placement
         textContent.items.forEach(item => {
@@ -184,6 +194,51 @@ const TextLayer: React.FC<{
     };
   }, [pdfPage, viewport]);
 
+  // ── Marcar coincidencias de búsqueda ─────────────────────
+  // Envuelve cada coincidencia en <mark> dentro del span de pdf.js: no cambia el ancho
+  // del texto, así que la posición y la selección siguen siendo correctas.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.querySelectorAll('mark.search-hit').forEach(mark => {
+      const parent = mark.parentNode;
+      mark.replaceWith(document.createTextNode(mark.textContent || ''));
+      parent?.normalize();
+    });
+
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return;
+
+    container.querySelectorAll('span').forEach(span => {
+      if (span.childNodes.length !== 1 || span.firstChild?.nodeType !== Node.TEXT_NODE) return;
+      const text = span.textContent || '';
+      const lower = text.toLowerCase();
+      if (!lower.includes(term)) return;
+
+      const fragment = document.createDocumentFragment();
+      let pos = 0;
+      for (let idx = lower.indexOf(term); idx !== -1; idx = lower.indexOf(term, pos)) {
+        if (idx > pos) fragment.append(text.slice(pos, idx));
+        const mark = document.createElement('mark');
+        mark.className = 'search-hit';
+        mark.textContent = text.slice(idx, idx + term.length);
+        fragment.append(mark);
+        pos = idx + term.length;
+      }
+      if (pos < text.length) fragment.append(text.slice(pos));
+      span.replaceChildren(fragment);
+    });
+
+    if (focusToken !== undefined && handledFocusRef.current !== focusToken) {
+      const first = container.querySelector('mark.search-hit');
+      if (first) {
+        handledFocusRef.current = focusToken;
+        first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+  }, [searchTerm, renderCount, focusToken]);
+
   return (
     <div
       ref={containerRef}
@@ -191,7 +246,11 @@ const TextLayer: React.FC<{
       style={{
         width: `${viewport.width}px`,
         height: `${viewport.height}px`,
-      }}
+        // Variables que usa pdf.js para dimensionar la capa y cada línea de texto
+        '--total-scale-factor': viewport.scale,
+        '--scale-round-x': '1px',
+        '--scale-round-y': '1px',
+      } as React.CSSProperties}
     />
   );
 };
@@ -201,9 +260,11 @@ interface SearchPanelProps {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
   onClose: () => void;
   onMatchFound: (pageIndex: number, rects: DOMRect[]) => void;
+  /** Informa el texto buscado para marcarlo en las páginas */
+  onQueryChange: (query: string) => void;
 }
 
-const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound }) => {
+const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound, onQueryChange }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Array<{ pageIndex: number; rects: DOMRect[] }>>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -217,6 +278,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound
   useEffect(() => {
     if (!query.trim() || !pdfDoc) {
       setResults([]);
+      onQueryChange('');
       return;
     }
 
@@ -247,6 +309,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound
       }
 
       if (!cancelled) {
+        onQueryChange(allMatches.length > 0 ? query : '');
         setResults(allMatches);
         setCurrentIdx(0);
         setIsSearching(false);
@@ -263,7 +326,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound
       clearTimeout(debounce);
       setIsSearching(false);
     };
-  }, [query, pdfDoc, onMatchFound]);
+  }, [query, pdfDoc, onMatchFound, onQueryChange]);
 
   const goToMatch = useCallback((idx: number) => {
     if (results.length === 0) return;
@@ -330,8 +393,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   showRulers = false,
   showSearch = false,
   onCloseSearch,
+  onPrint,
 }) => {
-  const { pdfDoc, numPages, pageInfos } = usePdfContext();
+  const { pdfDoc, numPages, pageInfos, arrayBuffer, replaceWithBytes, documentId } = usePdfContext();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Active pages: Set of page indices that should have a live canvas
@@ -360,13 +424,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Search match navigation
   const [searchMatchPage, setSearchMatchPage] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+
+  // Posición de scroll, para conservarla cuando el documento se recarga tras aplicar
+  // un cambio (mismo documentId). Al abrir otro archivo se empieza desde arriba.
+  const lastScrollRef = useRef<{ documentId: number; top: number; left: number } | null>(null);
 
   // Context Menu & Selection Toolbar
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; text: string; range: Range } | null>(null);
   
-  // Custom Visual Highlights: pageIndex -> array of rects (in percentages 0-100 to scale with zoom)
-  const [pageHighlights, setPageHighlights] = useState<Map<number, { left: number; top: number; width: number; height: number }[]>>(new Map());
+  const [isSavingHighlight, setIsSavingHighlight] = useState(false);
 
   // ── Context Menu Handlers ────────────────────────────────
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -420,57 +489,61 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     window.getSelection()?.removeAllRanges();
   };
 
-  const handleHighlight = () => {
-    if (selectionBox) {
-      const range = selectionBox.range;
-      const rects = Array.from(range.getClientRects());
-
-      setPageHighlights(prev => {
-        const next = new Map(prev);
-
-        rects.forEach(rect => {
-          // Ignore very thin rects (sometimes artifacts of selection)
-          if (rect.width < 2 || rect.height < 2) return;
-
-          // Find the page wrapper this rect belongs to
-          const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-          const pageWrapper = elements.find(el => el.hasAttribute('data-page-index'));
-
-          if (pageWrapper) {
-            const pageIndex = parseInt(pageWrapper.getAttribute('data-page-index') || '0', 10);
-            const wrapperRect = pageWrapper.getBoundingClientRect();
-
-            // Store as percentages so they scale automatically when zooming
-            const pLeft = ((rect.left - wrapperRect.left) / wrapperRect.width) * 100;
-            const pTop = ((rect.top - wrapperRect.top) / wrapperRect.height) * 100;
-            const pWidth = (rect.width / wrapperRect.width) * 100;
-            const pHeight = (rect.height / wrapperRect.height) * 100;
-
-            const current = next.get(pageIndex) || [];
-            next.set(pageIndex, [...current, { left: pLeft, top: pTop, width: pWidth, height: pHeight }]);
-          }
-        });
-
-        return next;
-      });
-    }
+  /** Guarda la selección como anotación de resaltado en el PDF (se puede deshacer). */
+  const handleHighlight = async () => {
+    const box = selectionBox;
     setSelectionBox(null);
     window.getSelection()?.removeAllRanges();
+    if (!box || !arrayBuffer || isSavingHighlight) return;
+
+    const rectsByPage = new Map<number, ViewRect[]>();
+    Array.from(box.range.getClientRects()).forEach(rect => {
+      // Ignore very thin rects (sometimes artifacts of selection)
+      if (rect.width < 2 || rect.height < 2) return;
+
+      // Find the page wrapper this rect belongs to
+      const elements = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const pageWrapper = elements.find(el => el.hasAttribute('data-page-index'));
+      if (!pageWrapper) return;
+
+      const pageIndex = parseInt(pageWrapper.getAttribute('data-page-index') || '0', 10);
+      const wrapperRect = pageWrapper.getBoundingClientRect();
+      const rects = rectsByPage.get(pageIndex) || [];
+      rects.push({
+        x: (rect.left - wrapperRect.left) / wrapperRect.width,
+        y: (rect.top - wrapperRect.top) / wrapperRect.height,
+        width: rect.width / wrapperRect.width,
+        height: rect.height / wrapperRect.height,
+      });
+      rectsByPage.set(pageIndex, rects);
+    });
+    if (rectsByPage.size === 0) return;
+
+    setIsSavingHighlight(true);
+    try {
+      // pdf-lib se carga solo al resaltar, para no pesar en el arranque
+      const { addHighlights } = await import('../../utils/highlight');
+      await replaceWithBytes(await addHighlights(arrayBuffer, rectsByPage));
+    } catch (e) {
+      console.error('No se pudo guardar el resaltado:', e);
+      alert('No se pudo guardar el resaltado en este PDF.');
+    } finally {
+      setIsSavingHighlight(false);
+    }
   };
 
   // ── Clear all caches when pdfDoc changes ─────────────────
+  // Se limpia siempre que cambia pdfDoc (el efecto solo corre en ese caso). No se usa
+  // `docChanged`: en StrictMode el render se ejecuta dos veces y la segunda pasada ya
+  // lo ve en false, así que quedaban en caché páginas del documento destruido (el visor
+  // se queda montado al recargar tras aplicar un cambio).
   useEffect(() => {
-    if (docChanged) {
-      pageRefs.current.clear();
-      renderingRef.current.clear();
-      renderedRef.current.clear();
-      canvasRefs.current.clear();
-      setActivePages(new Set());
-      setSearchMatchPage(null);
-      // Los resaltados pertenecen al documento anterior: no deben aparecer en el nuevo.
-      setPageHighlights(new Map());
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    pageRefs.current.clear();
+    renderingRef.current.clear();
+    renderedRef.current.clear();
+    canvasRefs.current.clear();
+    setActivePages(new Set());
+    setSearchMatchPage(null);
   }, [pdfDoc]);
 
   // ── Get or load a PDFPageProxy ───────────────────────────
@@ -557,7 +630,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
           if (entry.isIntersecting) {
             if (!wasVisible) { visiblePages.add(idx); changed = true; }
-            onPageVisible?.(idx);
           } else {
             if (wasVisible) { visiblePages.delete(idx); changed = true; }
           }
@@ -593,7 +665,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     containers?.forEach(el => observer.observe(el));
 
     return () => observer.disconnect();
-  }, [pdfDoc, numPages, zoom, onPageVisible]);
+  }, [pdfDoc, numPages, zoom]);
 
   // ── Render active pages when they change ─────────────────
   useEffect(() => {
@@ -608,10 +680,47 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [zoom]);
 
   // ── Scroll to a specific page ────────────────────────────
-  const scrollToPage = useCallback((pageIndex: number) => {
+  const scrollToPage = useCallback((pageIndex: number, behavior: ScrollBehavior = 'smooth') => {
     const el = scrollContainerRef.current?.querySelector(`[data-page-index="${pageIndex}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el?.scrollIntoView({ behavior, block: 'start' });
   }, []);
+
+  /** Página que ocupa la parte superior del visor (la que se está leyendo). */
+  const getTopPageIndex = useCallback((): number => {
+    const container = scrollContainerRef.current;
+    if (!container) return 0;
+    const top = container.getBoundingClientRect().top + 40;
+    const wrappers = container.querySelectorAll<HTMLElement>('[data-page-index]');
+    // Búsqueda binaria: primera página cuyo borde inferior queda por debajo de `top`
+    let lo = 0, hi = wrappers.length - 1, found = hi;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (wrappers[mid].getBoundingClientRect().bottom > top) { found = mid; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    return Math.max(0, found);
+  }, []);
+
+  // ── Pasar de página con el teclado: AvPág / RePág / Inicio / Fin ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const last = numPages - 1;
+      let target: number | null = null;
+      if (e.key === 'PageDown') target = Math.min(last, getTopPageIndex() + 1);
+      else if (e.key === 'PageUp') target = Math.max(0, getTopPageIndex() - 1);
+      else if (e.key === 'Home') target = 0;
+      else if (e.key === 'End') target = last;
+      if (target === null) return;
+      e.preventDefault();
+      // Instantáneo: con desplazamiento suave, pulsar varias veces seguidas no avanzaría
+      scrollToPage(target, 'instant');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [numPages, getTopPageIndex, scrollToPage]);
 
   // Expose to window for ThumbnailSidebar
   useEffect(() => {
@@ -624,13 +733,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     const el = e.currentTarget;
     setScrollLeft(el.scrollLeft);
     setScrollTop(el.scrollTop);
-  }, []);
+    lastScrollRef.current = { documentId, top: el.scrollTop, left: el.scrollLeft };
+    onPageVisible?.(getTopPageIndex());
+  }, [documentId, onPageVisible, getTopPageIndex]);
+
+  // Tras recargar el mismo documento (aplicar, deshacer…), volver a la misma posición
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    const last = lastScrollRef.current;
+    if (!pdfDoc || !el || !last || last.documentId !== documentId) return;
+    el.scrollTo({ top: last.top, left: last.left, behavior: 'instant' });
+  }, [pdfDoc, documentId]);
 
   // ── Navigate to search match ─────────────────────────────
   const handleMatchFound = useCallback((pageIndex: number) => {
     setSearchMatchPage(pageIndex);
+    setSearchFocusToken(t => t + 1);
     scrollToPage(pageIndex);
   }, [scrollToPage]);
+
+  const handleCloseSearch = useCallback(() => {
+    setSearchTerm('');
+    onCloseSearch?.();
+  }, [onCloseSearch]);
 
   // ── First page dimensions (for ruler scale) ──────────────
   const firstPage = pageInfos[0];
@@ -659,8 +784,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       {showSearch && (
         <SearchPanel
           pdfDoc={pdfDoc}
-          onClose={onCloseSearch || (() => {})}
+          onClose={handleCloseSearch}
           onMatchFound={handleMatchFound}
+          onQueryChange={setSearchTerm}
         />
       )}
 
@@ -749,6 +875,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   <TextLayer
                     pdfPage={textData.page}
                     viewport={textData.viewport}
+                    searchTerm={showSearch ? searchTerm : ''}
+                    focusToken={searchMatchPage === pageInfo.index ? searchFocusToken : undefined}
                   />
                 )}
 
@@ -773,20 +901,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   />
                 )}
 
-                {/* Custom Visual Highlights */}
-                {(pageHighlights.get(pageInfo.index) || []).map((hRect, i) => (
-                  <div
-                    key={i}
-                    className="absolute pointer-events-none mix-blend-multiply bg-[#FFE100]/40 rounded-sm"
-                    style={{
-                      left: `${hRect.left}%`,
-                      top: `${hRect.top}%`,
-                      width: `${hRect.width}%`,
-                      height: `${hRect.height}%`
-                    }}
-                  />
-                ))}
-
                 {/* Page number badge */}
                 <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-sm text-white text-[10px] font-medium px-2 py-0.5 rounded-full select-none pointer-events-none">
                   {pageInfo.index + 1} / {numPages}
@@ -808,7 +922,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           }}
           onMouseDown={(e) => e.preventDefault()} // Prevent losing selection when clicking buttons
         >
-          <button onClick={handleHighlight} title="Resaltar texto">
+          <button onClick={handleHighlight} title="Resaltar texto (se guarda en el PDF)">
             <Edit3 className="w-3.5 h-3.5 text-yellow-500" />
             Resaltar
           </button>
@@ -850,6 +964,15 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           }}>
             <MousePointer2 className="w-4 h-4 text-[var(--text-secondary)]" /> Seleccionar todo
           </button>
+          {onPrint && (
+            <>
+              <div className="mx-2 my-1 h-px bg-[var(--border-medium)]" />
+              <button onClick={() => { setContextMenu(null); onPrint(); }}>
+                <Printer className="w-4 h-4 text-[var(--text-secondary)]" /> Imprimir…
+                <span className="ml-auto pl-4 text-[11px] text-[var(--text-muted)]">Ctrl+P</span>
+              </button>
+            </>
+          )}
           <div className="mx-2 my-1 h-px bg-[var(--border-medium)]" />
           <button onClick={() => {
             alert(`Documento: ${pdfDoc.numPages} páginas.\nVisualizando en CamePDF.`);

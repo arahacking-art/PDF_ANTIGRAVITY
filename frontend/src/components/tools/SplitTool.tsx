@@ -154,7 +154,7 @@ const SplitTool: React.FC = () => {
                     key={page.index}
                     onClick={() => toggle(page.index)}
                     className={[
-                      'relative rounded-lg border-2 overflow-hidden transition-all duration-100 focus:outline-none bg-white',
+                      'paper relative rounded-lg border-2 overflow-hidden transition-all duration-100 focus:outline-none bg-white',
                       isMarked && mode === 'keep' ? 'border-blue-500 shadow-lg shadow-blue-100 scale-[1.02]' : '',
                       isMarked && mode === 'delete' ? 'border-red-500 shadow-lg shadow-red-100 scale-[1.02]' : '',
                       !isMarked ? 'border-gray-200 hover:border-gray-300 hover:shadow-sm' : '',

@@ -57,6 +57,11 @@ interface PdfContextValue extends PdfState {
   canRedo: boolean;
   /** Hay cambios aplicados que aún no se han descargado */
   isDirty: boolean;
+  /**
+   * Identifica la sesión de edición: cambia al abrir o cerrar un archivo, pero no al
+   * aplicar, deshacer o rehacer cambios (el visor lo usa para conservar la posición).
+   */
+  documentId: number;
 }
 
 interface HistoryEntry {
@@ -140,6 +145,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const savedVersionRef = useRef(0);  // última versión descargada
   const busyRef = useRef(false);      // evita cambios simultáneos (p. ej. Ctrl+Z repetido)
   const [historyStatus, setHistoryStatus] = useState({ canUndo: false, canRedo: false, isDirty: false });
+  const [documentId, setDocumentId] = useState(0);
 
   const syncHistoryStatus = useCallback(() => {
     setHistoryStatus({
@@ -154,6 +160,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     redoRef.current = [];
     versionRef.current = ++versionCounterRef.current;
     savedVersionRef.current = versionRef.current;
+    setDocumentId(versionRef.current);
     syncHistoryStatus();
   }, [syncHistoryStatus]);
 
@@ -409,6 +416,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       redo,
       markSaved,
       ...historyStatus,
+      documentId,
     }}>
       {children}
     </PdfContext.Provider>

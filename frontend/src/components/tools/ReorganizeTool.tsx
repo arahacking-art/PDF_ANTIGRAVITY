@@ -143,7 +143,7 @@ const ReorganizeTool: React.FC = () => {
                     onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
                     className={[
                       'relative rounded-lg border-2 overflow-hidden cursor-grab active:cursor-grabbing',
-                      'transition-all duration-150 bg-white',
+                      'paper transition-all duration-150 bg-white',
                       isDragging ? 'opacity-30 scale-95 border-blue-400' : '',
                       isOver ? 'border-blue-500 shadow-xl scale-[1.03]' : 'border-gray-200 hover:border-gray-300 hover:shadow-md',
                     ].join(' ')}

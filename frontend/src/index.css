@@ -206,6 +206,24 @@ body {
   user-select: text;
   /* Required for pdf.js text layer positioning */
   transform-origin: 0 0;
+  /* pdf.js v4+ dimensiona cada línea con variables CSS (como en su pdf_viewer.css).
+     --total-scale-factor lo fija el componente TextLayer según el zoom. */
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
 }
 
 .pdf-text-layer span,
@@ -515,4 +533,94 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ============================================================
+   TOOL CONTENT — Modo oscuro
+   Las herramientas usan clases de color fijas de Tailwind pensadas para fondo
+   claro (bg-white, text-gray-900…). En modo oscuro se reasignan aquí a los
+   tokens del tema, solo dentro del panel de herramientas (.tool-content).
+   `.paper` marca lo que debe seguir blanco: páginas PDF y vista previa de firmas.
+   ============================================================ */
+.dark { color-scheme: dark; }
+
+/* Superficies */
+.dark .tool-content :is(.bg-white, .bg-slate-50):not(.paper) { background-color: var(--bg-card); }
+.dark .tool-content .bg-gray-50:not(.paper)                  { background-color: rgba(255,255,255,0.04); }
+.dark .tool-content :is(.bg-gray-100, .bg-gray-200)          { background-color: rgba(255,255,255,0.08); }
+
+/* Texto */
+.dark .tool-content :is(.text-gray-900, .text-gray-800, .text-black) { color: var(--text-primary); }
+.dark .tool-content :is(.text-gray-700, .text-gray-600)              { color: var(--text-secondary); }
+.dark .tool-content .text-gray-500                                   { color: #8E8E93; }
+.dark .tool-content :is(.text-gray-400, .text-gray-300)              { color: var(--text-muted); }
+
+/* Bordes */
+.dark .tool-content :is(.border-gray-100, .border-gray-200)  { border-color: var(--border-subtle); }
+.dark .tool-content .border-gray-300                         { border-color: var(--border-medium); }
+.dark .tool-content .border-gray-400                         { border-color: var(--border-strong); }
+.dark .tool-content .divide-gray-100 > * + *                 { border-color: var(--border-subtle); }
+
+/* Avisos de color: fondo translúcido y texto claro del mismo tono */
+.dark .tool-content :is(.bg-blue-50, .bg-blue-100)           { background-color: rgba(76,139,245,0.14); }
+.dark .tool-content :is(.border-blue-100, .border-blue-200)  { border-color: rgba(76,139,245,0.35); }
+.dark .tool-content :is(.text-blue-600, .text-blue-700, .text-blue-800, .text-blue-900) { color: #8AB4FF; }
+
+.dark .tool-content :is(.bg-red-50, .bg-red-100)             { background-color: rgba(239,68,68,0.14); }
+.dark .tool-content .border-red-200                          { border-color: rgba(239,68,68,0.35); }
+.dark .tool-content :is(.text-red-600, .text-red-700)        { color: #FCA5A5; }
+
+.dark .tool-content :is(.bg-green-50, .bg-green-100)         { background-color: rgba(34,197,94,0.14); }
+.dark .tool-content .border-green-200                        { border-color: rgba(34,197,94,0.35); }
+.dark .tool-content :is(.text-green-600, .text-green-700, .text-green-800) { color: #86EFAC; }
+
+.dark .tool-content :is(.bg-yellow-50, .bg-amber-50)         { background-color: rgba(234,179,8,0.14); }
+.dark .tool-content :is(.border-yellow-200, .border-amber-200) { border-color: rgba(234,179,8,0.35); }
+.dark .tool-content :is(.text-yellow-600, .text-yellow-700, .text-yellow-800, .text-amber-700) { color: #FDE68A; }
+
+.dark .tool-content .bg-purple-50                            { background-color: rgba(168,85,247,0.14); }
+.dark .tool-content .border-purple-200                       { border-color: rgba(168,85,247,0.35); }
+.dark .tool-content :is(.text-purple-600, .text-purple-700)  { color: #D8B4FE; }
+
+.dark .tool-content .bg-orange-100                           { background-color: rgba(249,115,22,0.14); }
+.dark .tool-content :is(.text-orange-600, .text-orange-700)  { color: #FDBA74; }
+
+/* Estados hover (después de los fondos para que prevalezcan) */
+.dark .tool-content :is(.hover\:bg-gray-50, .hover\:bg-gray-200):hover { background-color: rgba(255,255,255,0.08); }
+.dark .tool-content :is(.hover\:bg-blue-50, .hover\:bg-blue-100):hover  { background-color: rgba(76,139,245,0.22); }
+.dark .tool-content :is(.hover\:bg-red-50, .hover\:bg-red-100):hover    { background-color: rgba(239,68,68,0.22); }
+.dark .tool-content .hover\:bg-purple-100:hover                         { background-color: rgba(168,85,247,0.22); }
+.dark .tool-content :is(.hover\:text-gray-900, .hover\:text-gray-700, .hover\:text-gray-600):hover { color: var(--text-primary); }
+.dark .tool-content .hover\:border-gray-300:hover                       { border-color: var(--border-strong); }
+
+/* Campos de formulario: sin clase de fondo, el navegador los pinta blancos */
+.dark .tool-content :is(input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]), select, textarea) {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}
+.dark .tool-content :is(input, textarea)::placeholder { color: var(--text-muted); }
+
+/* Coincidencias de búsqueda (Ctrl+F) dentro de la capa de texto */
+.pdf-text-layer mark.search-hit {
+  color: transparent;
+  background-color: rgba(255, 170, 0, 0.45);
+  border-radius: 2px;
+}
+
+/* ============================================================
+   IMPRESIÓN — Ctrl+P imprime solo las páginas del PDF (utils/printPdf.ts)
+   ============================================================ */
+#print-container { display: none; }
+
+@media print {
+  body > *:not(#print-container) { display: none !important; }
+  html, body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #print-container { display: block; }
+  .print-page { break-after: page; }
+  .print-page:last-child { break-after: auto; }
+  .print-page img { display: block; }
 }

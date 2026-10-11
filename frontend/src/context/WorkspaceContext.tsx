@@ -15,6 +15,12 @@ interface WorkspaceContextType {
   closeTool: () => void;
   /** Lo usa App para indicar cómo se cierra la herramienta activa */
   registerCloseTool: (handler: (() => void) | null) => void;
+  /** Abre "Unir PDFs" con estos archivos ya cargados (p. ej. al soltar varios en el inicio) */
+  startMerge: (files: File[]) => void;
+  /** Devuelve (y vacía) los archivos pendientes de unir; lo usa MergeTool al montarse */
+  takeMergeFiles: () => File[];
+  /** Lo usa App para indicar cómo se abre la herramienta de unir */
+  registerOpenMerge: (handler: (() => void) | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
@@ -37,8 +43,26 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
     closeToolRef.current = handler;
   }, []);
 
+  const openMergeRef = useRef<(() => void) | null>(null);
+  const mergeFilesRef = useRef<File[]>([]);
+  const registerOpenMerge = useCallback((handler: (() => void) | null) => {
+    openMergeRef.current = handler;
+  }, []);
+  const startMerge = useCallback((files: File[]) => {
+    mergeFilesRef.current = files;
+    openMergeRef.current?.();
+  }, []);
+  const takeMergeFiles = useCallback(() => {
+    const files = mergeFilesRef.current;
+    mergeFilesRef.current = [];
+    return files;
+  }, []);
+
   return (
-    <WorkspaceContext.Provider value={{ overlayRenderer, setOverlayRenderer, closeTool, registerCloseTool }}>
+    <WorkspaceContext.Provider value={{
+      overlayRenderer, setOverlayRenderer, closeTool, registerCloseTool,
+      startMerge, takeMergeFiles, registerOpenMerge,
+    }}>
       {children}
     </WorkspaceContext.Provider>
   );

@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
-import Dropzone from '../ui/Dropzone';
+import SignatureCreator from './SignatureCreator';
 import Button from '../ui/Button';
 import ResultActions from '../ui/ResultActions';
 import { PenLine, Loader } from 'lucide-react';
@@ -11,12 +11,27 @@ import { downloadBlob } from '../../utils/download';
 
 interface SigPos { x: number; y: number; w: number; h: number; }
 
+/**
+ * Rectángulo que ocupa la imagen dentro de la caja de la firma, como object-fit: contain
+ * (así lo que se dibuja en el PDF coincide con la vista previa). Todo en proporciones 0-1.
+ */
+function containedRect(box: SigPos, imgAspect: number, view: { width: number; height: number }): SigPos {
+  const boxW = box.w * view.width;
+  const boxH = box.h * view.height;
+  if (boxW / boxH > imgAspect) {
+    const w = (boxH * imgAspect) / view.width;
+    return { x: box.x + (box.w - w) / 2, y: box.y, w, h: box.h };
+  }
+  const h = boxW / imgAspect / view.height;
+  return { x: box.x, y: box.y + (box.h - h) / 2, w: box.w, h };
+}
+
 const SignTool: React.FC = () => {
   const ctx = usePdfContext();
   const { setOverlayRenderer } = useWorkspace();
   const workspaceFile = ctx.file;
 
-  const [sigFile, setSigFile] = useState<File | null>(null);
+  // Firma elegida como PNG (data URL), creada o recuperada en SignatureCreator
   const [sigDataUrl, setSigDataUrl] = useState<string | null>(null);
   const [selectedPage, setSelectedPage] = useState(0);
   const [sigPos, setSigPos] = useState<SigPos>({ x: 0.6, y: 0.75, w: 0.28, h: 0.09 });
@@ -27,12 +42,19 @@ const SignTool: React.FC = () => {
   const draggingRef = useRef<{ mx: number; my: number; sx: number; sy: number } | null>(null);
   const resizingRef = useRef<{ mx: number; my: number; sw: number; sh: number } | null>(null);
 
-  const handleSigSelected = (files: File[]) => {
-    if (!files[0]) return;
-    setSigFile(files[0]);
-    const reader = new FileReader();
-    reader.onloadend = () => { setSigDataUrl(reader.result as string); };
-    reader.readAsDataURL(files[0]);
+  /** Al elegir firma, ajusta la caja a su proporción para que quede ceñida. */
+  const handleSigSelected = (dataUrl: string) => {
+    const img = new Image();
+    img.onload = () => {
+      const page = ctx.pageInfos[selectedPage];
+      const pageAspect = page ? page.width / page.height : 0.75;
+      const w = 0.28;
+      const h = Math.min(0.3, (w * pageAspect) / (img.naturalWidth / img.naturalHeight));
+      setSigPos({ x: 0.6, y: Math.min(0.75, 1 - h - 0.02), w, h });
+      setSigDataUrl(dataUrl);
+      setResultBlob(null);
+    };
+    img.src = dataUrl;
   };
 
   const onSigMouseDown = (e: React.MouseEvent, pageDims: {width: number, height: number}) => {
@@ -134,11 +156,10 @@ const SignTool: React.FC = () => {
   }, [renderOverlay, setOverlayRenderer]);
 
   const handleSubmit = async () => {
-    if (!workspaceFile || !sigFile || !sigDataUrl) return;
+    if (!workspaceFile || !sigDataUrl) return;
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const pdfAb = await workspaceFile.arrayBuffer();
-      const sigAb = await sigFile.arrayBuffer();
       const pdfDoc = await PDFDocument.load(pdfAb);
       const pages = pdfDoc.getPages();
       if (selectedPage < 0 || selectedPage >= pages.length) {
@@ -146,23 +167,19 @@ const SignTool: React.FC = () => {
       }
       const page = pages[selectedPage];
 
-      let img;
-      if (sigFile.type === 'image/png') {
-        img = await pdfDoc.embedPng(sigAb);
-      } else {
-        img = await pdfDoc.embedJpg(sigAb);
-      }
+      const img = await pdfDoc.embedPng(sigDataUrl);
 
       // sigPos está en proporciones de la página tal como se ve (rotación y CropBox
       // aplicados). El ancla de drawImage es la esquina inferior-izquierda de la firma
       // en la vista; la imagen se rota para compensar el /Rotate de la página.
       const view = getViewSize(page);
-      const anchor = viewToPdf(page, sigPos.x, sigPos.y + sigPos.h);
+      const fit = containedRect(sigPos, img.width / img.height, view);
+      const anchor = viewToPdf(page, fit.x, fit.y + fit.h);
       page.drawImage(img, {
         x: anchor.x,
         y: anchor.y,
-        width: sigPos.w * view.width,
-        height: sigPos.h * view.height,
+        width: fit.w * view.width,
+        height: fit.h * view.height,
         rotate: uprightRotation(page),
       });
 
@@ -190,10 +207,7 @@ const SignTool: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {!sigDataUrl ? (
-            <div className="space-y-3">
-              <h2 className="text-sm font-medium text-gray-600">Sube tu imagen de firma (PNG recomendado con fondo transparente)</h2>
-              <Dropzone onFilesSelected={handleSigSelected} accept={{ 'image/png': ['.png'], 'image/jpeg': ['.jpg','.jpeg'] }} multiple={false} />
-            </div>
+            <SignatureCreator onSelect={handleSigSelected} />
           ) : (
             <div className="space-y-4">
               <div className="flex flex-col gap-3">
@@ -210,9 +224,9 @@ const SignTool: React.FC = () => {
                 <div className="flex flex-col gap-2">
                   <span className="text-sm text-gray-600">Firma seleccionada:</span>
                   <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                    <img src={sigDataUrl} alt="Firma" className="h-12 object-contain" />
-                    <button onClick={() => { setSigFile(null); setSigDataUrl(null); }} className="text-sm text-red-600 hover:underline ml-auto">
-                      Eliminar
+                    <img src={sigDataUrl} alt="Firma" className="paper h-12 object-contain bg-white rounded px-2" />
+                    <button onClick={() => { setSigDataUrl(null); setResultBlob(null); }} className="text-sm text-blue-600 hover:underline ml-auto">
+                      Cambiar firma
                     </button>
                   </div>
                 </div>

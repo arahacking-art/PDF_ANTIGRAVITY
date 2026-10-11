@@ -6,11 +6,14 @@ import ResultActions from '../ui/ResultActions';
 import { GitMerge, Loader, GripVertical, Trash2 } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 import { usePdfContext } from '../../context/PdfContext';
+import { useWorkspace } from '../../context/WorkspaceContext';
 
 const MERGED_FILE_NAME = 'Documento_Unido.pdf';
 
 const MergeTool: React.FC = () => {
-  const [files, setFiles] = useState<File[]>([]);
+  const { takeMergeFiles } = useWorkspace();
+  // Archivos soltados en la pantalla de inicio, si los hay
+  const [files, setFiles] = useState<File[]>(takeMergeFiles);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);

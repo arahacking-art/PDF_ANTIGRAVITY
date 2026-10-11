@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   GitMerge, Scissors, LayoutGrid, RotateCw, Minimize2,
   FilePlus2, PenLine, Droplets, EyeOff, ShieldCheck, ShieldOff,
   FileText, Monitor, Table2, Image, FileUp, ScanText,
   ChevronLeft, ChevronRight, X, Download, Sun, Moon,
-  Type, CheckSquare, Lock, Undo2, Redo2,
+  Type, CheckSquare, Lock, Undo2, Redo2, Loader,
 } from 'lucide-react';
 
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -16,24 +16,28 @@ import ZoomToolbar from './components/workspace/ZoomToolbar';
 import WelcomeDropzone from './components/workspace/WelcomeDropzone';
 
 // ── Tool imports ──────────────────────────────────────────
-import MergeTool       from './components/tools/MergeTool';
-import SplitTool       from './components/tools/SplitTool';
-import SignTool        from './components/tools/SignTool';
-import ReorganizeTool  from './components/tools/ReorganizeTool';
-import ProtectTool     from './components/tools/ProtectTool';
-import UnlockTool      from './components/tools/UnlockTool';
-import CompressTool    from './components/tools/CompressTool';
-import RotateTool      from './components/tools/RotateTool';
-import WatermarkTool   from './components/tools/WatermarkTool';
-import CreatePdfTool   from './components/tools/CreatePdfTool';
-import RedactTool      from './components/tools/RedactTool';
-import PdfToJpgTool    from './components/tools/PdfToJpgTool';
-import { PdfToWordTool, PdfToPptxTool, PdfToExcelTool } from './components/tools/ConvertTools';
-import OfficeToPdfTool from './components/tools/OfficeToPdfTool';
-import OcrTool         from './components/tools/OcrTool';
-import AnnotateTool    from './components/tools/AnnotateTool';
-import FormTool        from './components/tools/FormTool';
+// Cada herramienta se descarga solo al abrirla: así el arranque no carga las 19.
+const MergeTool       = lazy(() => import('./components/tools/MergeTool'));
+const SplitTool       = lazy(() => import('./components/tools/SplitTool'));
+const SignTool        = lazy(() => import('./components/tools/SignTool'));
+const ReorganizeTool  = lazy(() => import('./components/tools/ReorganizeTool'));
+const ProtectTool     = lazy(() => import('./components/tools/ProtectTool'));
+const UnlockTool      = lazy(() => import('./components/tools/UnlockTool'));
+const CompressTool    = lazy(() => import('./components/tools/CompressTool'));
+const RotateTool      = lazy(() => import('./components/tools/RotateTool'));
+const WatermarkTool   = lazy(() => import('./components/tools/WatermarkTool'));
+const CreatePdfTool   = lazy(() => import('./components/tools/CreatePdfTool'));
+const RedactTool      = lazy(() => import('./components/tools/RedactTool'));
+const PdfToJpgTool    = lazy(() => import('./components/tools/PdfToJpgTool'));
+const PdfToWordTool   = lazy(() => import('./components/tools/ConvertTools').then(m => ({ default: m.PdfToWordTool })));
+const PdfToPptxTool   = lazy(() => import('./components/tools/ConvertTools').then(m => ({ default: m.PdfToPptxTool })));
+const PdfToExcelTool  = lazy(() => import('./components/tools/ConvertTools').then(m => ({ default: m.PdfToExcelTool })));
+const OfficeToPdfTool = lazy(() => import('./components/tools/OfficeToPdfTool'));
+const OcrTool         = lazy(() => import('./components/tools/OcrTool'));
+const AnnotateTool    = lazy(() => import('./components/tools/AnnotateTool'));
+const FormTool        = lazy(() => import('./components/tools/FormTool'));
 import { downloadBlob } from './utils/download';
+import { printPdfDocument, type PrintProgress } from './utils/printPdf';
 
 // ── Types ─────────────────────────────────────────────────
 type ToolId =
@@ -94,7 +98,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const TOOL_COMPONENTS: Record<ToolId, React.FC> = {
+const TOOL_COMPONENTS: Record<ToolId, React.ComponentType> = {
   merge:           MergeTool,
   split:           SplitTool,
   reorganize:      ReorganizeTool,
@@ -121,6 +125,17 @@ const SELF_MANAGED_TOOLS: ToolId[] = ['merge', 'create', 'office-to-pdf', 'reorg
 
 const ALL_ITEMS = NAV_GROUPS.flatMap(g => g.items);
 
+const ToolLoading: React.FC = () => (
+  <div className="flex items-center justify-center gap-2 p-10 text-sm" style={{ color: 'var(--text-muted)' }}>
+    <Loader className="w-4 h-4 animate-spin" />
+    Cargando herramienta…
+  </div>
+);
+
+const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0];
+const zoomIn  = (z: number) => ZOOM_STEPS.find(s => s > z + 0.005) ?? z;
+const zoomOut = (z: number) => [...ZOOM_STEPS].reverse().find(s => s < z - 0.005) ?? z;
+
 const UNSAVED_CHANGES_MESSAGE = 'El documento tiene cambios sin descargar. ¿Cerrarlo de todos modos?';
 
 /** True si el foco está en un campo de texto (ahí Ctrl+Z debe deshacer el texto, no el documento). */
@@ -136,7 +151,7 @@ function Workspace() {
     clearFile, arrayBuffer, pageInfos, isEncrypted,
     undo, redo, canUndo, canRedo, isDirty, markSaved,
   } = usePdfContext();
-  const { overlayRenderer, registerCloseTool } = useWorkspace();
+  const { overlayRenderer, registerCloseTool, registerOpenMerge } = useWorkspace();
   const { theme, toggleTheme } = useTheme();
 
   const [activeTool,      setActiveTool]      = useState<ToolId | null>(null);
@@ -148,7 +163,9 @@ function Workspace() {
   const [showRulers,      setShowRulers]      = useState(false);
   const [showSearch,      setShowSearch]      = useState(false);
 
-  const hasDocument  = pdfDoc !== null || isEncrypted;
+  // Mientras se recarga tras aplicar un cambio, pdfDoc es null un instante: se sigue
+  // considerando que hay documento para no mostrar la pantalla de bienvenida.
+  const hasDocument  = pdfDoc !== null || isEncrypted || (isLoading && fileName !== '');
   const isSelfManaged = activeTool !== null && SELF_MANAGED_TOOLS.includes(activeTool);
   const ActiveComponent = activeTool ? TOOL_COMPONENTS[activeTool] : null;
   const activeItem = activeTool ? ALL_ITEMS.find(i => i.id === activeTool) : null;
@@ -177,11 +194,47 @@ function Workspace() {
     return () => registerCloseTool(null);
   }, [registerCloseTool, closeToolPanel]);
 
+  // Soltar varios PDF en la pantalla de inicio abre "Unir PDFs"
+  useEffect(() => {
+    registerOpenMerge(() => handleToolClick('merge'));
+    return () => registerOpenMerge(null);
+  }, [registerOpenMerge, handleToolClick]);
+
   const handleDownload = useCallback(() => {
     if (!arrayBuffer || !fileName) return;
     downloadBlob(new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' }), fileName);
     markSaved();
   }, [arrayBuffer, fileName, markSaved]);
+
+  // ── Imprimir (Ctrl+P) ─────────────────────────────────────
+  const [printProgress, setPrintProgress] = useState<PrintProgress | null>(null);
+  const printCancelledRef = useRef(false);
+
+  const handlePrint = useCallback(async () => {
+    if (!pdfDoc || printProgress) return;
+    printCancelledRef.current = false;
+    setPrintProgress({ done: 0, total: pdfDoc.numPages });
+    try {
+      await printPdfDocument(pdfDoc, setPrintProgress, () => printCancelledRef.current);
+    } catch (e) {
+      console.error('Error al imprimir:', e);
+      alert('No se pudo preparar el documento para imprimir.');
+    } finally {
+      setPrintProgress(null);
+    }
+  }, [pdfDoc, printProgress]);
+
+  // ── Zoom con Ctrl + rueda (y pellizco en el touchpad) sobre el documento ──
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (!(e.target instanceof Element) || !e.target.closest('.viewer-bg')) return;
+      e.preventDefault(); // evita el zoom de toda la página del navegador
+      setZoom(e.deltaY < 0 ? zoomIn : zoomOut);
+    };
+    window.addEventListener('wheel', handler, { passive: false });
+    return () => window.removeEventListener('wheel', handler);
+  }, []);
 
   const handleCloseDocument = useCallback(() => {
     if (isDirty && !window.confirm(UNSAVED_CHANGES_MESSAGE)) return;
@@ -209,6 +262,13 @@ function Workspace() {
         return;
       }
 
+      // Ctrl+P — imprimir el PDF, no la página web
+      if (ctrl && key === 'p' && pdfDoc) {
+        e.preventDefault();
+        handlePrint();
+        return;
+      }
+
       // Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z — deshacer / rehacer cambios del documento
       if (ctrl && (key === 'z' || key === 'y') && !isEditableTarget(e.target)) {
         e.preventDefault();
@@ -226,22 +286,14 @@ function Workspace() {
       // Ctrl++ / Ctrl+= — zoom in
       if (ctrl && (e.key === '+' || e.key === '=')) {
         e.preventDefault();
-        setZoom(z => {
-          const steps = [0.25,0.33,0.5,0.67,0.75,0.9,1.0,1.1,1.25,1.5,1.75,2.0,2.5,3.0,4.0];
-          const next = steps.find(s => s > z + 0.005);
-          return next ?? z;
-        });
+        setZoom(zoomIn);
         return;
       }
 
       // Ctrl+- — zoom out
       if (ctrl && e.key === '-') {
         e.preventDefault();
-        setZoom(z => {
-          const steps = [0.25,0.33,0.5,0.67,0.75,0.9,1.0,1.1,1.25,1.5,1.75,2.0,2.5,3.0,4.0];
-          const prev = [...steps].reverse().find(s => s < z - 0.005);
-          return prev ?? z;
-        });
+        setZoom(zoomOut);
         return;
       }
 
@@ -261,7 +313,7 @@ function Workspace() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen, closeToolPanel, handleDownload, undo, redo]);
+  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen, closeToolPanel, handleDownload, undo, redo, pdfDoc, handlePrint]);
 
   const handleFitWidth = useCallback(() => {
     if (!pageInfos || pageInfos.length === 0) { setZoom(1.2); return; }
@@ -474,6 +526,25 @@ function Workspace() {
         {/* ── Central Area ──────────────────────────────────────── */}
         <div className="flex-1 flex overflow-hidden relative">
 
+          {/* Print preparation overlay */}
+          {printProgress && (
+            <div
+              className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4"
+              style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+            >
+              <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin-smooth" />
+              <p className="text-sm font-medium text-white/80">
+                Preparando impresión… página {Math.min(printProgress.done + 1, printProgress.total)} de {printProgress.total}
+              </p>
+              <button
+                onClick={() => { printCancelledRef.current = true; }}
+                className="text-sm text-white/70 hover:text-white underline"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+
           {/* Loading overlay */}
           {isLoading && (
             <div
@@ -504,7 +575,7 @@ function Workspace() {
                 className="min-h-full rounded-2xl shadow-md border transition-theme"
                 style={{ background: 'var(--bg-panel)', borderColor: 'var(--border-subtle)' }}
               >
-                <div className="relative">
+                <div className="relative tool-content">
                   <button
                     onClick={closeToolPanel}
                     className="absolute top-3 right-3 p-1.5 rounded-lg transition-colors z-10"
@@ -516,7 +587,7 @@ function Workspace() {
                   >
                     <X className="w-4 h-4" />
                   </button>
-                  <ActiveComponent />
+                  <Suspense fallback={<ToolLoading />}><ActiveComponent /></Suspense>
                 </div>
               </div>
             </main>
@@ -561,6 +632,7 @@ function Workspace() {
                 <PdfViewer
                   zoom={zoom}
                   onPageVisible={setCurrentPage}
+                  onPrint={handlePrint}
                   renderPageOverlay={overlayRenderer || undefined}
                   showRulers={showRulers}
                   showSearch={showSearch}
@@ -591,7 +663,7 @@ function Workspace() {
                     borderColor: 'var(--border-subtle)',
                   }}
                 >
-                  <div className="relative">
+                  <div className="relative tool-content">
                     <button
                       onClick={closeToolPanel}
                       className="absolute top-3 right-3 p-1.5 rounded-lg transition-colors z-10"
@@ -600,7 +672,7 @@ function Workspace() {
                     >
                       <X className="w-4 h-4" />
                     </button>
-                    <ActiveComponent />
+                    <Suspense fallback={<ToolLoading />}><ActiveComponent /></Suspense>
                   </div>
                 </aside>
               )}

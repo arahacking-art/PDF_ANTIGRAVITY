@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, Scissors, ShieldCheck, Minimize2 } from 'lucide-react';
 import { usePdfContext } from '../../context/PdfContext';
+import { useWorkspace } from '../../context/WorkspaceContext';
 
 /**
  * Welcome screen shown when no PDF is loaded.
@@ -9,15 +10,18 @@ import { usePdfContext } from '../../context/PdfContext';
  */
 const WelcomeDropzone: React.FC = () => {
   const { loadFile } = usePdfContext();
+  const { startMerge } = useWorkspace();
 
+  // Un PDF se abre para editar; varios abren "Unir PDFs" con ellos ya cargados
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles[0]) loadFile(acceptedFiles[0]);
-  }, [loadFile]);
+    if (acceptedFiles.length > 1) startMerge(acceptedFiles);
+    else if (acceptedFiles[0]) loadFile(acceptedFiles[0]);
+  }, [loadFile, startMerge]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
-    multiple: false,
+    multiple: true,
   });
 
   const features = [
@@ -43,10 +47,13 @@ const WelcomeDropzone: React.FC = () => {
           <input {...getInputProps()} />
           <UploadCloud className={`w-16 h-16 mb-5 transition-colors ${isDragActive ? 'text-blue-500' : 'text-gray-300'}`} />
           <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
-            {isDragActive ? 'Suelta tu PDF aquí...' : 'Abre un documento PDF'}
+            {isDragActive ? 'Suelta tus PDF aquí...' : 'Abre un documento PDF'}
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Arrastra y suelta un archivo aquí, o haz clic para seleccionarlo
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            ¿Varios PDF? Suéltalos juntos y te ayudamos a unirlos en uno solo.
           </p>
           <p className="text-xs text-gray-300 mt-3">
             Tu archivo se procesa localmente. No se sube a ningún servidor externo.
