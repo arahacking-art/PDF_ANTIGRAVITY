@@ -5,14 +5,20 @@
 # CÓMO OBTENER LAS VERSIONES EXACTAS DEL CONTENEDOR EN PRODUCCIÓN:
 #   docker compose -f deployment/docker-compose.prod.yml exec backend pip freeze
 #
-fastapi==0.115.12
+fastapi==0.143.0
 uvicorn==0.34.3
 pikepdf==9.5.0
-python-multipart==0.0.20
+python-multipart==0.0.32
 pdf2docx==0.5.8
 pymupdf==1.25.5
 python-pptx==1.0.2
-pdfplumber==0.11.6
+pdfplumber==0.11.10
 openpyxl==3.1.5
-Pillow==11.1.0
+Pillow==12.3.0
 ocrmypdf==16.10.1
+
+# ─── Dependencias transitivas fijadas por seguridad ───────────────────────────
+# No se usan directamente, pero sus versiones antiguas tienen vulnerabilidades
+# conocidas (pip-audit). Fijarlas evita que pip resuelva una versión vulnerable.
+starlette==1.7.0        # vía fastapi
+pdfminer.six==20260107  # vía pdfplumber

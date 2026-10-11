@@ -6,18 +6,7 @@ import {
   saveThumbnailsToCache,
   clearExpiredCache,
 } from '../utils/thumbnailCache';
-
-// Configure pdf.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString();
-
-const PDFJS_OPTIONS = {
-  cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
-  cMapPacked: true,
-  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
-};
+import { openPdfDocument } from '../config/pdfjs';
 
 export interface PdfPageInfo {
   index: number;       // 0-based
@@ -138,7 +127,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Destroy the old doc after the React render cycle finishes unmounting the viewer
     if (oldDoc) {
-      setTimeout(() => oldDoc.destroy(), 0);
+      setTimeout(() => oldDoc.loadingTask.destroy(), 0);
     }
 
     try {
@@ -147,7 +136,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Create a copy of the ArrayBuffer so pdf.js worker doesn't detach the original
       const abCopy = ab.slice(0);
-      const loadingTask = pdfjsLib.getDocument({ data: abCopy, ...PDFJS_OPTIONS });
+      const loadingTask = openPdfDocument(abCopy);
       const pdfDoc = await loadingTask.promise;
       pdfDocRef.current = pdfDoc;
 
@@ -298,7 +287,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (oldDoc) {
-      setTimeout(() => oldDoc.destroy(), 0);
+      setTimeout(() => oldDoc.loadingTask.destroy(), 0);
     }
   }, []);
 

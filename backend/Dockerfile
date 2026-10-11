@@ -1,4 +1,5 @@
-FROM python:3.13-slim
+# Distribución fijada (trixie): un salto de versión de Debian cambiaría LibreOffice/Tesseract sin aviso.
+FROM python:3.13-slim-trixie
 
 WORKDIR /app
 
@@ -14,6 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-spa \
         tesseract-ocr-eng \
+        # Idiomas adicionales ofrecidos en la UI de OCR (deben coincidir con OCR_LANGUAGES en main.py)
+        tesseract-ocr-fra \
+        tesseract-ocr-deu \
+        tesseract-ocr-por \
         ghostscript \
         unpaper \
         libgl1 \

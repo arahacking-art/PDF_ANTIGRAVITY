@@ -2,8 +2,10 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
+import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
 import Button from '../ui/Button';
 import { Type, PenTool, CheckCircle, Loader, X } from 'lucide-react';
+import { downloadBlob } from '../../utils/download';
 
 type TextAnnotation = { type: 'text'; text: string; x: number; y: number; pageIndex: number };
 type PathAnnotation = { type: 'path'; points: {x: number, y: number}[]; pageIndex: number };
@@ -161,22 +163,27 @@ const AnnotateTool: React.FC = () => {
       for (const ann of annotations) {
         if (ann.pageIndex < 0 || ann.pageIndex >= pages.length) continue;
         const page = pages[ann.pageIndex];
-        const { width, height } = page.getSize();
+        const view = getViewSize(page);
 
         if (ann.type === 'text') {
+          // La línea base queda 16 pt por debajo del punto donde se hizo clic (en la vista).
+          const baseline = viewToPdf(page, ann.x, ann.y + 16 / view.height);
           page.drawText(ann.text, {
-            x: ann.x * width,
-            y: height - (ann.y * height) - 16,
+            x: baseline.x,
+            y: baseline.y,
             size: 16,
-            color: rgb(0, 0, 0)
+            color: rgb(0, 0, 0),
+            rotate: uprightRotation(page),
           });
         } else if (ann.type === 'path') {
+          // drawSvgPath interpreta el trazado como SVG (eje Y hacia abajo) e invierte Y.
+          // Por eso se pasa -y: tras la inversión queda en la coordenada PDF correcta.
+          // (Antes se pasaba y directamente y el trazo terminaba fuera de la página.)
           const svgPath = ann.points.map((p, i) => {
-            const px = p.x * width;
-            const py = height - (p.y * height);
-            return `${i === 0 ? 'M' : 'L'} ${px} ${py}`;
+            const pt = viewToPdf(page, p.x, p.y);
+            return `${i === 0 ? 'M' : 'L'} ${pt.x} ${-pt.y}`;
           }).join(' ');
-          
+
           if (svgPath) {
             page.drawSvgPath(svgPath, {
               x: 0,
@@ -196,14 +203,6 @@ const AnnotateTool: React.FC = () => {
     } finally { 
       setIsProcessing(false); 
     }
-  };
-
-  const downloadBlob = (blob: Blob, name: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
   const clearAnnotations = () => {

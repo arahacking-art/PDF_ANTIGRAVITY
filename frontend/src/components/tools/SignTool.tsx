@@ -2,17 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
+import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { PenLine, Loader, CheckCircle } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, name: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 interface SigPos { x: number; y: number; w: number; h: number; }
 
@@ -150,7 +144,6 @@ const SignTool: React.FC = () => {
         throw new Error('Página seleccionada inválida');
       }
       const page = pages[selectedPage];
-      const { width, height } = page.getSize();
 
       let img;
       if (sigFile.type === 'image/png') {
@@ -159,12 +152,18 @@ const SignTool: React.FC = () => {
         img = await pdfDoc.embedJpg(sigAb);
       }
 
-      const x = sigPos.x * width;
-      const h = sigPos.h * height;
-      const y = height - (sigPos.y * height) - h;
-      const w = sigPos.w * width;
-
-      page.drawImage(img, { x, y, width: w, height: h });
+      // sigPos está en proporciones de la página tal como se ve (rotación y CropBox
+      // aplicados). El ancla de drawImage es la esquina inferior-izquierda de la firma
+      // en la vista; la imagen se rota para compensar el /Rotate de la página.
+      const view = getViewSize(page);
+      const anchor = viewToPdf(page, sigPos.x, sigPos.y + sigPos.h);
+      page.drawImage(img, {
+        x: anchor.x,
+        y: anchor.y,
+        width: sigPos.w * view.width,
+        height: sigPos.h * view.height,
+        rotate: uprightRotation(page),
+      });
 
       const bytes = await pdfDoc.save();
       const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });

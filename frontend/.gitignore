@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Recursos de pdf.js copiados desde node_modules (scripts/copy-pdfjs-assets.mjs)
+public/pdfjs/

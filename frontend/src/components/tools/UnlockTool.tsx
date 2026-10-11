@@ -4,12 +4,7 @@ import { usePdfSecurity } from '../../hooks/usePdfSecurity';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { LockOpen, FileText, CheckCircle } from 'lucide-react';
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-};
+import { downloadBlob, formatBytes } from '../../utils/download';
 
 const UnlockTool: React.FC = () => {
   const ctx = usePdfContext();
@@ -22,17 +17,6 @@ const UnlockTool: React.FC = () => {
   const { processWithPassword, isProcessing, error } = usePdfSecurity('unlock');
 
   const effectiveFile = workspaceFile || localFile;
-
-  const downloadBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   const handleUnlock = async () => {
     if (!effectiveFile || !password) return;

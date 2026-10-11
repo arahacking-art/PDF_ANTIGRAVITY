@@ -7,8 +7,7 @@ type ConversionEndpoint =
   | '/api/to-word'
   | '/api/to-pptx'
   | '/api/to-excel'
-  | '/api/to-jpg'
-  | '/api/redact';
+  | '/api/to-jpg';
 
 interface UseBackendConvertOptions {
   endpoint: ConversionEndpoint;
@@ -18,39 +17,6 @@ interface UseBackendConvertOptions {
 export const useBackendConvert = ({ endpoint, extraFields = {} }: UseBackendConvertOptions) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const convert = async (file: File): Promise<Blob | null> => {
-    setIsProcessing(true);
-    setError(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      for (const [key, value] of Object.entries(extraFields)) {
-        formData.append(key, value);
-      }
-
-      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ detail: `Error ${response.status}` }));
-        throw new Error(errData.detail || `Error del servidor: ${response.status}`);
-      }
-
-      return await response.blob();
-    } catch (err: any) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
-        setError('No se pudo conectar al servidor. Verifica que el backend esté activo en el puerto 8000.');
-      } else {
-        setError(err.message || 'Error inesperado.');
-      }
-      return null;
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const convertWithExtra = async (file: File, extra: Record<string, string>): Promise<Blob | null> => {
     setIsProcessing(true);
@@ -84,6 +50,8 @@ export const useBackendConvert = ({ endpoint, extraFields = {} }: UseBackendConv
       setIsProcessing(false);
     }
   };
+
+  const convert = (file: File): Promise<Blob | null> => convertWithExtra(file, {});
 
   return { convert, convertWithExtra, isProcessing, error };
 };

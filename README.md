@@ -22,7 +22,8 @@ El proyecto está dividido en una arquitectura cliente-servidor (Frontend / Back
 ### Backend (Librerías y Motores)
 - **`FastAPI` (Python)**: Framework web ultrarrápido para construir los endpoints asíncronos de la API.
 - **`uvicorn`**: Servidor ASGI de alto rendimiento para correr la aplicación FastAPI.
-- **`Ghostscript`**: Motor open-source instalado en el sistema operativo del contenedor, utilizado para realizar la compresión y optimización matemática agresiva de archivos PDF pesados.
+- **`PyMuPDF` / `pikepdf`**: Compresión y optimización de PDFs (limpieza de objetos, recompresión de streams y, en modo agresivo, re-muestreo de imágenes a JPEG) y censura real de contenido.
+- **`Ghostscript`**: Instalado en el contenedor como dependencia de `ocrmypdf` para optimizar escaneos.
 - **`Tesseract OCR`**: Motor de reconocimiento óptico de caracteres de Google, invocado desde el backend para extraer texto de PDFs escaneados (imágenes) y volverlos seleccionables.
 - **`LibreOffice / unoconv`**: Herramientas a nivel de sistema integradas en la imagen de Docker para convertir fielmente documentos de Office (Word, Excel, PowerPoint) a formato PDF.
 - **Gestión de Entorno**: Docker & Docker Compose.
@@ -32,13 +33,17 @@ El proyecto está dividido en una arquitectura cliente-servidor (Frontend / Back
 ## 📂 Estructura del Proyecto
 
 ```text
-CAME_PDF/
-├── docker-compose.yml       # Orquestador global de contenedores
+PDF_ANTIGRAVITY/
+├── docker-compose.yml       # Entorno de desarrollo (Vite + FastAPI)
+├── deploy.sh                # Actualización y despliegue en el servidor
+├── deployment/              # Producción: docker-compose.prod.yml + Nginx (HTTPS, CSP, rate limit)
 ├── README.md                # Este archivo de documentación
 │
 ├── frontend/                # Aplicación Web SPA (React + Vite)
+│   ├── Dockerfile           # Build de producción (Vite) servido por Nginx
 │   ├── Dockerfile.dev       # Contenedor de desarrollo para UI
-│   ├── package.json         # Dependencias NPM (React, pdf-lib, Tailwind)
+│   ├── package.json         # Dependencias (pnpm): React, pdf-lib, pdf.js, Tailwind
+│   ├── scripts/             # copy-pdfjs-assets.mjs: copia CMaps/fuentes/WASM de pdf.js a public/pdfjs/
 │   ├── tailwind.config.js   # Configuración de estilos y Dark Mode
 │   └── src/
 │       ├── App.tsx          # Punto de entrada principal y enrutador de herramientas
@@ -50,12 +55,15 @@ CAME_PDF/
 │       │   ├── workspace/   # Componentes del paradigma "Documento Central" (Visor, Miniaturas, Dropzone)
 │       │   ├── tools/       # Cada uno de los módulos de edición (Firmar, Censurar, Rotar, etc.)
 │       │   └── ui/          # Componentes reutilizables (Botones, Inputs)
-│       └── hooks/           # Lógica reutilizable
+│       ├── config/          # URL del backend y configuración única de pdf.js
+│       ├── hooks/           # Lógica reutilizable
+│       ├── utils/           # Renderizado, caché de miniaturas, geometría de página, descargas
+│       └── workers/         # Web Worker de pdf-lib (rotar/eliminar páginas sin bloquear la UI)
 │
 └── backend/                 # API de Procesamiento Pesado (Python)
     ├── Dockerfile           # Contenedor del backend
     ├── requirements.txt     # Dependencias de Python (FastAPI, uvicorn)
-    └── main.py              # Endpoints REST (/api/compress, /api/ocr, etc.)
+    └── main.py              # Endpoints REST (/api/compress, /api/ocr, /api/redact-visual, etc.)
 ```
 
 ---
@@ -89,7 +97,7 @@ El entorno está completamente dockerizado para garantizar que se ejecute de la 
 
 3. **Acceder a la aplicación:**
    - **Frontend (Interfaz Gráfica):** Abre tu navegador web en `http://localhost:5173`
-   - **Backend (API / Documentación Swagger):** Disponible en `http://localhost:8000/docs`
+   - **Backend (API / Documentación Swagger):** Disponible en `http://localhost:8000/docs` (solo desde la propia máquina). El frontend llega al backend a través del proxy de Vite (`/api`), igual que en producción a través de Nginx.
 
 4. **Para detener el proyecto:**
    ```bash
@@ -108,7 +116,6 @@ El entorno está completamente dockerizado para garantizar que se ejecute de la 
 ### Edición Directa y Marcado (Frontend Local)
 - 📝 **Anotar:** Añadir cajas de texto libre y dibujo a mano alzada.
 - 🖋️ **Firmar:** Subir imágenes de firmas, arrastrarlas por cualquier página y redimensionarlas.
-- ⬛ **Censurar:** Dibujar rectángulos negros irreversibles sobre información sensible.
 - 💧 **Marca de Agua:** Imprimir textos masivos o centrados en múltiples ángulos y colores.
 - ✅ **Formularios:** Detección automática de AcroForms (cajas de texto, checkboxes) para rellenado interactivo.
 
@@ -119,6 +126,7 @@ El entorno está completamente dockerizado para garantizar que se ejecute de la 
 - 🔒 **Seguridad:** Encriptar documentos con contraseña o desbloquearlos.
 
 ### Tareas Pesadas (Delegadas al Backend)
-- 🗜️ **Comprimir:** Reducción drástica del tamaño de archivo preservando calidad (Ghostscript).
-- 👁️ **OCR (Reconocimiento Óptico):** Convertir PDFs de imágenes escaneadas en texto seleccionable.
+- 🗜️ **Comprimir:** Reducción del tamaño de archivo conservando formularios, enlaces y adjuntos (PyMuPDF + pikepdf).
+- 👁️ **OCR (Reconocimiento Óptico):** Convertir PDFs de imágenes escaneadas en texto seleccionable (español, inglés, francés, alemán y portugués).
+- ⬛ **Censurar:** Eliminación definitiva del contenido de las áreas marcadas en el visor.
 - 📄 **Conversión de Formatos:** De PDF a Word/Excel/PPTX/JPG y viceversa.

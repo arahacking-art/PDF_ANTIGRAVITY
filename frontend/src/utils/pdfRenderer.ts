@@ -4,13 +4,8 @@
  * Reemplaza completamente el endpoint /api/render-pages del backend.
  * No consume recursos del servidor.
  */
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configura el worker de pdf.js (bundled con Vite)
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString();
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { openPdfDocument } from '../config/pdfjs';
 
 export interface RenderedPage {
   index: number;          // 0-based
@@ -25,6 +20,7 @@ export interface RenderedPage {
 /**
  * Renderiza todas las páginas de un PDF como imágenes JPEG.
  * Corre 100% en el navegador. Muy rápido para thumbnails (scale=0.5-1).
+ * Cada imagen queda en memoria como dataURL: usar escalas bajas para listas de miniaturas.
  */
 export async function renderPdfPages(
   source: File | ArrayBuffer,
@@ -34,64 +30,48 @@ export async function renderPdfPages(
 ): Promise<RenderedPage[]> {
   const data = source instanceof File ? await source.arrayBuffer() : source;
 
-  const loadingTask = pdfjsLib.getDocument({ 
-    data,
-    cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
-    cMapPacked: true,
-    standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
-  });
-  const pdf = await loadingTask.promise;
-  const total = pdf.numPages;
-  const pages: RenderedPage[] = [];
+  const loadingTask = openPdfDocument(data);
+  try {
+    const pdf = await loadingTask.promise;
+    const total = pdf.numPages;
+    const pages: RenderedPage[] = [];
 
-  for (let i = 1; i <= total; i++) {
-    const page = await pdf.getPage(i);
-    const origViewport = page.getViewport({ scale: 1 });
-    const viewport = page.getViewport({ scale });
+    for (let i = 1; i <= total; i++) {
+      const page = await pdf.getPage(i);
+      const origViewport = page.getViewport({ scale: 1 });
+      const canvas = await renderPageToCanvas(pdf, i - 1, scale);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
+      pages.push({
+        index: i - 1,
+        dataUrl: canvas.toDataURL('image/jpeg', quality),
+        originalWidth: origViewport.width,
+        originalHeight: origViewport.height,
+        renderedWidth: canvas.width,
+        renderedHeight: canvas.height,
+        scale,
+      });
 
-    const ctx = canvas.getContext('2d', { alpha: false })!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+      releaseCanvas(canvas);
+      if (onProgress) onProgress(i, total);
+    }
 
-    await page.render({ canvasContext: ctx, canvas: canvas, viewport }).promise;
-
-    pages.push({
-      index: i - 1,
-      dataUrl: canvas.toDataURL('image/jpeg', quality),
-      originalWidth: origViewport.width,
-      originalHeight: origViewport.height,
-      renderedWidth: canvas.width,
-      renderedHeight: canvas.height,
-      scale,
-    });
-
-    page.cleanup();
-    if (onProgress) onProgress(i, total);
+    return pages;
+  } finally {
+    // Libera el documento en el worker de pdf.js (antes quedaba vivo indefinidamente).
+    await loadingTask.destroy();
   }
-
-  return pages;
 }
 
 /**
- * Renderiza una sola página como canvas (para exportar a JPG/PNG).
+ * Renderiza una página de un documento YA abierto como canvas (para exportar a JPG/PNG).
+ * Recibe el documento en lugar de los bytes para no volver a parsear el PDF completo
+ * por cada página (antes, exportar 100 páginas cargaba el documento 100 veces).
  */
-export async function renderPageAsCanvas(
-  source: File | ArrayBuffer,
+export async function renderPageToCanvas(
+  pdf: PDFDocumentProxy,
   pageIndex: number,
   scale = 2.0
 ): Promise<HTMLCanvasElement> {
-  const data = source instanceof File ? await source.arrayBuffer() : source;
-  const loadingTask = pdfjsLib.getDocument({
-    data,
-    cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
-    cMapPacked: true,
-    standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
-  });
-  const pdf = await loadingTask.promise;
   const page = await pdf.getPage(pageIndex + 1);
   const viewport = page.getViewport({ scale });
 
@@ -107,4 +87,10 @@ export async function renderPageAsCanvas(
   page.cleanup();
 
   return canvas;
+}
+
+/** Libera de inmediato la memoria del bitmap de un canvas que ya no se usa. */
+export function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
 }

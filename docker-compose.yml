@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend:
     build:
@@ -12,12 +10,16 @@ services:
       - /app/node_modules
     environment:
       - CHOKIDAR_USEPOLLING=true
+      # Vite reenvía /api al backend por la red de compose (ver vite.config.ts)
+      - API_PROXY_TARGET=http://backend:8000
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # Solo accesible desde esta máquina (Swagger en http://localhost:8000/docs).
+    # El frontend llega al backend por la red interna de compose, no por este puerto.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app

@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
-import { renderPageAsCanvas } from '../../utils/pdfRenderer';
+import { releaseCanvas, renderPageToCanvas } from '../../utils/pdfRenderer';
+import { openPdfDocument } from '../../config/pdfjs';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { Image, Loader, CheckCircle } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, name: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 const PdfToJpgTool: React.FC = () => {
   const ctx = usePdfContext();
@@ -44,37 +38,46 @@ const PdfToJpgTool: React.FC = () => {
     if (!files[0]) return;
     const f = files[0];
     setLocalFile(f); setDone(false); setError(null);
+    const loadingTask = openPdfDocument(await f.arrayBuffer());
     try {
-      const { getDocument } = await import('pdfjs-dist');
-      const ab = await f.arrayBuffer();
-      const pdf = await getDocument({ data: ab }).promise;
+      const pdf = await loadingTask.promise;
       setLocalPageCount(pdf.numPages);
     } catch { setLocalPageCount(0); }
+    finally { loadingTask.destroy(); }
   };
 
   const handleConvert = async () => {
     if (!effectiveFile) return;
     setIsProcessing(true); setProgress(0); setError(null); setDone(false);
+    // El documento se abre UNA vez para todas las páginas y se libera al terminar.
+    const loadingTask = openPdfDocument(await effectiveFile.arrayBuffer());
     try {
       const scale = DPI_SCALES[dpi];
-      const ab = await effectiveFile.arrayBuffer();
-      const { getDocument } = await import('pdfjs-dist');
-      const pdf = await getDocument({ data: ab }).promise;
+      const pdf = await loadingTask.promise;
       const total = pdf.numPages;
 
+      const renderJpeg = async (pageIndex: number): Promise<Blob> => {
+        const canvas = await renderPageToCanvas(pdf, pageIndex, scale);
+        try {
+          return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+            b => b ? resolve(b) : reject(new Error(`No se pudo generar la imagen de la página ${pageIndex + 1}.`)),
+            'image/jpeg', quality / 100,
+          ));
+        } finally {
+          releaseCanvas(canvas);
+        }
+      };
+
       if (total === 1) {
-        const canvas = await renderPageAsCanvas(ab, 0, scale);
-        const blob = await new Promise<Blob>(res => canvas.toBlob(b => res(b!), 'image/jpeg', quality / 100));
+        const blob = await renderJpeg(0);
         const name = effectiveFile.name.replace(/\.pdf$/i, '.jpg');
         downloadBlob(blob, name);
       } else {
         const zip = new JSZip();
         const baseName = effectiveFile.name.replace(/\.pdf$/i, '');
         for (let i = 0; i < total; i++) {
-          const canvas = await renderPageAsCanvas(ab, i, scale);
-          const blob = await new Promise<Blob>(res => canvas.toBlob(b => res(b!), 'image/jpeg', quality / 100));
-          const arrayBuffer = await blob.arrayBuffer();
-          zip.file(`${baseName}_pagina_${String(i + 1).padStart(3, '0')}.jpg`, arrayBuffer);
+          const blob = await renderJpeg(i);
+          zip.file(`${baseName}_pagina_${String(i + 1).padStart(3, '0')}.jpg`, blob);
           setProgress(Math.round((i + 1) / total * 100));
         }
         const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -82,7 +85,7 @@ const PdfToJpgTool: React.FC = () => {
       }
       setDone(true);
     } catch (e: any) { setError(e.message || 'Error al convertir'); }
-    finally { setIsProcessing(false); }
+    finally { loadingTask.destroy(); setIsProcessing(false); }
   };
 
   const hasFile = !!effectiveFile;

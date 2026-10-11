@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { BACKEND_URL } from '../../config/api';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
+import { removeCachedThumbnails } from '../../utils/thumbnailCache';
 import Button from '../ui/Button';
 import { EyeOff, Trash2, CheckCircle, Info } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, name: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 let rectCounter = 0;
 
@@ -137,27 +131,36 @@ const RedactTool: React.FC = () => {
     return () => setOverlayRenderer(null);
   }, [rects, workspaceFile, resultBlob, setOverlayRenderer]);
 
+  /**
+   * La censura se aplica en el backend (PyMuPDF apply_redactions), que ELIMINA el texto,
+   * las imágenes y los vectores bajo cada área. Dibujar rectángulos negros con pdf-lib
+   * solo tapaba el contenido: seguía pudiéndose copiar, buscar o extraer.
+   * Las áreas viajan como proporciones de la página tal como se ve en el visor.
+   */
   const handleSubmit = async () => {
     if (!workspaceFile || rects.length === 0) return;
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
-      const ab = await workspaceFile.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(ab);
+      const areas = rects.map(({ pageIndex, x1r, y1r, x2r, y2r }) => ({ page: pageIndex, x1r, y1r, x2r, y2r }));
+      const formData = new FormData();
+      formData.append('file', workspaceFile);
+      formData.append('areas', JSON.stringify(areas));
 
-      for (const rect of rects) {
-        const page = pdfDoc.getPages()[rect.pageIndex];
-        const { width, height } = page.getSize();
-        const x = rect.x1r * width;
-        const y = height - (rect.y2r * height);
-        const w = (rect.x2r - rect.x1r) * width;
-        const h = (rect.y2r - rect.y1r) * height;
-        page.drawRectangle({ x, y, width: w, height: h, color: rgb(0, 0, 0), borderWidth: 0 });
+      const response = await fetch(`${BACKEND_URL}/api/redact-visual`, { method: 'POST', body: formData });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ detail: `Error ${response.status}` }));
+        throw new Error(errData.detail || `Error del servidor: ${response.status}`);
       }
-
-      const bytes = await pdfDoc.save();
-      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
-      setResultBlob(blob);
-    } catch (e: any) { setError(e.message || 'Error al censurar'); }
+      setResultBlob(await response.blob());
+      // Las miniaturas cacheadas del original muestran lo que se acaba de censurar.
+      if (ctx.arrayBuffer) await removeCachedThumbnails(ctx.arrayBuffer);
+    } catch (e: any) {
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        setError('No se pudo conectar al servidor. Verifica que el backend esté activo.');
+      } else {
+        setError(e.message || 'Error al censurar');
+      }
+    }
     finally { setIsProcessing(false); }
   };
 
@@ -172,7 +175,7 @@ const RedactTool: React.FC = () => {
         <div className="p-2 bg-blue-50 rounded-lg"><EyeOff className="w-5 h-5 text-blue-600" /></div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Censurar PDF</h1>
-          <p className="text-sm text-gray-500">Dibuja áreas sobre el PDF en el visor central para ocultarlas.</p>
+          <p className="text-sm text-gray-500">Dibuja áreas sobre el PDF en el visor central. Su contenido se elimina definitivamente en el servidor interno.</p>
         </div>
       </div>
 

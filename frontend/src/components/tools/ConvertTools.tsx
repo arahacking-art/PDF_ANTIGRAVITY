@@ -4,14 +4,7 @@ import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { FileText, Monitor, Table2, Loader, CheckCircle } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 interface ConvertToolProps {
   title: string;

@@ -27,7 +27,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const { buffer, pageIndex, angle } = payload as { buffer: ArrayBuffer; pageIndex: number; angle: number };
         const pdfDoc = await PDFDocument.load(buffer);
         const page = pdfDoc.getPage(pageIndex);
-        page.setRotation(degrees(page.getRotation().angle + angle));
+        // Normalizado a 0-359: /Rotate debe ser múltiplo de 90 y algunos lectores no aceptan 450, 540...
+        page.setRotation(degrees((((page.getRotation().angle + angle) % 360) + 360) % 360));
         const result = await pdfDoc.save();
         const response: WorkerResponse = { id, type: 'SUCCESS', buffer: result.buffer as ArrayBuffer };
         self.postMessage(response, { transfer: [result.buffer as ArrayBuffer] });

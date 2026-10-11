@@ -2,14 +2,7 @@ import React, { useState } from 'react';
 import { usePdfCreate, type PdfBlock, type TextBlock, type ImageBlock } from '../../hooks/usePdfCreate';
 import Button from '../ui/Button';
 import { FilePlus, Type, Image, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 let nextId = 1;
 const genId = () => `block-${nextId++}`;

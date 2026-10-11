@@ -467,6 +467,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       canvasRefs.current.clear();
       setActivePages(new Set());
       setSearchMatchPage(null);
+      // Los resaltados pertenecen al documento anterior: no deben aparecer en el nuevo.
+      setPageHighlights(new Map());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfDoc]);

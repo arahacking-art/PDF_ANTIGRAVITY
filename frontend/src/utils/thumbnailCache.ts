@@ -158,3 +158,22 @@ export async function clearExpiredCache(): Promise<void> {
     // Fail silently
   }
 }
+
+/**
+ * Elimina del caché las miniaturas de un documento concreto.
+ * Se usa tras censurar: las miniaturas del original mostrarían el contenido censurado.
+ */
+export async function removeCachedThumbnails(arrayBuffer: ArrayBuffer): Promise<void> {
+  try {
+    const hash = await computeFileHash(arrayBuffer);
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(hash);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve(); // Fail silently
+    });
+  } catch {
+    // IndexedDB not available — nothing cached
+  }
+}

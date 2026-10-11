@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Button from '../ui/Button';
 import { FileUp, Loader, CheckCircle, XCircle, X } from 'lucide-react';
 import { BACKEND_URL } from '../../config/api';
+import { formatBytes, downloadBlob } from '../../utils/download';
 
 
 const ALL_EXTENSIONS = ['.docx', '.doc', '.odt', '.rtf', '.xlsx', '.xls', '.ods', '.csv', '.pptx', '.ppt', '.odp', '.txt'];
@@ -19,12 +20,6 @@ const EXT_ICONS: Record<string, { icon: string; label: string; color: string }> 
   '.ppt':  { icon: '📈', label: 'PowerPoint', color: 'text-orange-600' },
   '.odp':  { icon: '📈', label: 'Impress', color: 'text-orange-500' },
   '.txt':  { icon: '📄', label: 'Texto', color: 'text-gray-500' },
-};
-
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 };
 
 const OfficeToPdfTool: React.FC = () => {
@@ -61,13 +56,7 @@ const OfficeToPdfTool: React.FC = () => {
         const err = await response.json().catch(() => ({ detail: `Error ${response.status}` }));
         throw new Error(err.detail);
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name.replace(/\.[^/.]+$/, '.pdf');
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(url);
+      downloadBlob(await response.blob(), file.name.replace(/\.[^/.]+$/, '.pdf'));
       setResults(prev => new Map(prev).set(file.name, 'done'));
     } catch (err: any) {
       setResults(prev => new Map(prev).set(file.name, 'error'));

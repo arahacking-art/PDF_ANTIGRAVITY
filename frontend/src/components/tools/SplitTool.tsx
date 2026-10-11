@@ -5,14 +5,12 @@ import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { Scissors, Loader, CheckCircle } from 'lucide-react';
+import { downloadBlob } from '../../utils/download';
 
-const downloadBlob = (blob: Blob, name: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+// Las miniaturas se muestran a ~200 px de ancho: escala 0.6 (≈360 px para A4) basta incluso
+// en pantallas de alta densidad. Antes se usaba 2.0 (~40x más píxeles por página en memoria).
+const THUMB_SCALE = 0.6;
+const THUMB_QUALITY = 0.8;
 
 const SplitTool: React.FC = () => {
   const ctx = usePdfContext();
@@ -35,7 +33,7 @@ const SplitTool: React.FC = () => {
     setMarked(new Set()); setError(null); setPages([]); setResultBlob(null);
     setIsLoading(true); setProgress(0);
     try {
-      const rendered = await renderPdfPages(f, 2.0, 0.95, (p, t) => setProgress(Math.round(p / t * 100)));
+      const rendered = await renderPdfPages(f, THUMB_SCALE, THUMB_QUALITY, (p, t) => setProgress(Math.round(p / t * 100)));
       setPages(rendered);
     } catch (e: any) { setError(e.message || 'Error al cargar el PDF'); }
     finally { setIsLoading(false); }

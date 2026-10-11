@@ -4,13 +4,8 @@ import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { ScanText, Loader, CheckCircle, FileText } from 'lucide-react';
 import { BACKEND_URL } from '../../config/api';
+import { formatBytes, downloadBlob } from '../../utils/download';
 
-
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-};
 
 const LANGUAGES = [
   { code: 'spa+eng', label: '🇪🇸🇺🇸 Español + Inglés (recomendado)' },
@@ -71,12 +66,7 @@ const OcrTool: React.FC = () => {
 
   const downloadResult = () => {
     if (!resultBlob || !effectiveFile) return;
-    const url = URL.createObjectURL(resultBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = effectiveFile.name.replace(/\.pdf$/i, '_OCR.pdf');
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+    downloadBlob(resultBlob, effectiveFile.name.replace(/\.pdf$/i, '_OCR.pdf'));
   };
 
   const handleClear = () => {

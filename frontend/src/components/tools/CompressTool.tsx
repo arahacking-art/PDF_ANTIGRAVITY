@@ -4,13 +4,8 @@ import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { Minimize2, Loader, CheckCircle, FileText } from 'lucide-react';
 import { BACKEND_URL } from '../../config/api';
+import { downloadBlob, formatBytes } from '../../utils/download';
 
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-};
 
 interface CompressionResult {
   originalSize: number;
@@ -30,17 +25,6 @@ const CompressTool: React.FC = () => {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
 
   const effectiveFile = workspaceFile || localFile;
-
-  const downloadBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   const handleCompress = async () => {
     if (!effectiveFile) return;

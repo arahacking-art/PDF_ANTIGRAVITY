@@ -3,14 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import { GitMerge, Loader, GripVertical, Trash2 } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, name: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 const MergeTool: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);

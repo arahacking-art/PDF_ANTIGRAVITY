@@ -4,14 +4,7 @@ import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import Button from '../ui/Button';
 import { Droplets, CheckCircle } from 'lucide-react';
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+import { downloadBlob } from '../../utils/download';
 
 const WatermarkTool: React.FC = () => {
   const ctx = usePdfContext();

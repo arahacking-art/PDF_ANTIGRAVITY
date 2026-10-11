@@ -33,6 +33,7 @@ import OfficeToPdfTool from './components/tools/OfficeToPdfTool';
 import OcrTool         from './components/tools/OcrTool';
 import AnnotateTool    from './components/tools/AnnotateTool';
 import FormTool        from './components/tools/FormTool';
+import { downloadBlob } from './utils/download';
 
 // ── Types ─────────────────────────────────────────────────
 type ToolId =
@@ -151,6 +152,16 @@ function Workspace() {
     }
   }, [isEncrypted, activeTool]);
 
+  const handleToolClick = useCallback((toolId: ToolId) => {
+    setActiveTool(toolId);
+    setToolPanelOpen(true);
+  }, []);
+
+  const closeToolPanel = useCallback(() => {
+    setToolPanelOpen(false);
+    setActiveTool(null);
+  }, []);
+
   // ── Global keyboard shortcuts ─────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -201,17 +212,7 @@ function Workspace() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen]);
-
-  const handleToolClick = useCallback((toolId: ToolId) => {
-    setActiveTool(toolId);
-    setToolPanelOpen(true);
-  }, []);
-
-  const closeToolPanel = useCallback(() => {
-    setToolPanelOpen(false);
-    setActiveTool(null);
-  }, []);
+  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen, closeToolPanel]);
 
   const handleFitWidth = useCallback(() => {
     if (!pageInfos || pageInfos.length === 0) { setZoom(1.2); return; }
@@ -232,13 +233,7 @@ function Workspace() {
 
   const handleDownload = useCallback(() => {
     if (!arrayBuffer || !fileName) return;
-    const blob = new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' }), fileName);
   }, [arrayBuffer, fileName]);
 
   // ── Shared button style ────────────────────────────────────
