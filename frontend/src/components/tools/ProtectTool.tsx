@@ -3,7 +3,8 @@ import { usePdfContext } from '../../context/PdfContext';
 import { usePdfSecurity } from '../../hooks/usePdfSecurity';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { Lock, FileText, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { Lock, FileText } from 'lucide-react';
 import { downloadBlob, formatBytes } from '../../utils/download';
 
 const ProtectTool: React.FC = () => {
@@ -61,7 +62,7 @@ const ProtectTool: React.FC = () => {
               <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm text-blue-800 truncate">{workspaceFile.name}</p>
-                <p className="text-xs text-blue-600 mt-0.5">Desde Workspace · {formatBytes(workspaceFile.size)}</p>
+                <p className="text-xs text-blue-600 mt-0.5">Documento abierto · {formatBytes(workspaceFile.size)}</p>
               </div>
             </div>
           ) : (
@@ -117,27 +118,13 @@ const ProtectTool: React.FC = () => {
             </p>
           </div>
 
-          {/* Result actions: Download + Replace in Workspace */}
+          {/* Result actions: Aplicar al documento / Descargar */}
           {resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">¡Protegido correctamente!</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `protegido_${effectiveFileName}`)}>
-                  Descargar
-                </Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `protegido_${effectiveFileName}`);
-                    setResultBlob(null);
-                    setPassword('');
-                    setConfirmPassword('');
-                  }}>
-                    Reemplazar en Workspace
-                  </Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Protegido correctamente!"
+              subtitle="Descarga la copia protegida. El documento abierto no cambia, así puedes seguir editándolo."
+              onDownload={() => downloadBlob(resultBlob, `protegido_${effectiveFileName}`)}
+            />
           )}
 
           {combinedError && (

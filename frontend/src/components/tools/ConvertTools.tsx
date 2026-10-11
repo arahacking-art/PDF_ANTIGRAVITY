@@ -59,7 +59,7 @@ const ConvertTool: React.FC<ConvertToolProps> = ({ title, description, Icon, end
               <p className="text-xs text-gray-500 mt-0.5">{(effectiveFile.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
             {workspaceFile ? (
-              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Workspace</span>
+              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Documento abierto</span>
             ) : (
               <button onClick={() => { setLocalFile(null); setDone(false); }} className="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 bg-white border border-gray-200 rounded">Cambiar archivo</button>
             )}

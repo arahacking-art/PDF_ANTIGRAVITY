@@ -5,7 +5,8 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { PenLine, Loader, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { PenLine, Loader } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
 interface SigPos { x: number; y: number; w: number; h: number; }
@@ -223,23 +224,14 @@ const SignTool: React.FC = () => {
               </div>
 
               {resultBlob && !isProcessing && (
-                <div className="flex flex-col gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                    <p className="text-sm text-green-800 font-medium">¡Firma aplicada correctamente!</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `firmado_${ctx.fileName}`)}>
-                      Descargar
-                    </Button>
-                    <Button size="sm" onClick={async () => {
-                      await ctx.replaceWithBlob(resultBlob, `firmado_${ctx.fileName}`);
-                      setResultBlob(null);
-                    }}>
-                      Reemplazar en Workspace
-                    </Button>
-                  </div>
-                </div>
+                <ResultActions
+                  title="¡Firma aplicada correctamente!"
+                  onDownload={() => downloadBlob(resultBlob, `firmado_${ctx.fileName}`)}
+                  onApply={async () => {
+                    await ctx.replaceWithBlob(resultBlob);
+                    setResultBlob(null);
+                  }}
+                />
               )}
 
               {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}

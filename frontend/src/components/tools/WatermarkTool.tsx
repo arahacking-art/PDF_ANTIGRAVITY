@@ -3,7 +3,8 @@ import { usePdfWatermark, type WatermarkOptions } from '../../hooks/usePdfWaterm
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import Button from '../ui/Button';
-import { Droplets, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { Droplets } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
 const WatermarkTool: React.FC = () => {
@@ -90,7 +91,7 @@ const WatermarkTool: React.FC = () => {
   if (!workspaceFile) {
     return (
       <div className="p-6 text-center text-gray-500">
-        No hay ningún archivo abierto en el Workspace.
+        No hay ningún documento abierto.
       </div>
     );
   }
@@ -160,19 +161,14 @@ const WatermarkTool: React.FC = () => {
 
         {/* Result actions */}
         {resultBlob && (
-          <div className="flex flex-col gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium">¡Procesado correctamente!</p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button variant="outline" size="sm" onClick={downloadResult} className="w-full justify-center">Descargar</Button>
-              <Button size="sm" onClick={async () => {
-                await ctx.replaceWithBlob(resultBlob, `marcado_${workspaceFile.name}`);
-                setResultBlob(null);
-              }} className="w-full justify-center">Reemplazar en Workspace</Button>
-            </div>
-          </div>
+          <ResultActions
+            title="¡Marca de agua aplicada!"
+            onDownload={downloadResult}
+            onApply={async () => {
+              await ctx.replaceWithBlob(resultBlob);
+              setResultBlob(null);
+            }}
+          />
         )}
 
         <div className="pt-2 border-t border-gray-100">

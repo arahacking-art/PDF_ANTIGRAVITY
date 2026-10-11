@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
+import ResultActions from '../ui/ResultActions';
 import { Minimize2, Loader, CheckCircle, FileText } from 'lucide-react';
 import { BACKEND_URL } from '../../config/api';
 import { downloadBlob, formatBytes } from '../../utils/download';
@@ -97,7 +98,7 @@ const CompressTool: React.FC = () => {
               <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm text-blue-800 truncate">{workspaceFile.name}</p>
-                <p className="text-xs text-blue-600 mt-0.5">Desde Workspace · {formatBytes(workspaceFile.size)}</p>
+                <p className="text-xs text-blue-600 mt-0.5">Documento abierto · {formatBytes(workspaceFile.size)}</p>
               </div>
             </div>
           ) : (
@@ -148,26 +149,17 @@ const CompressTool: React.FC = () => {
             </div>
           )}
 
-          {/* Result actions: Download + Replace in Workspace */}
+          {/* Result actions: Aplicar al documento / Descargar */}
           {resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">¡Comprimido correctamente!</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `comprimido_${effectiveFileName}`)}>
-                  Descargar
-                </Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `comprimido_${effectiveFileName}`);
-                    setResultBlob(null);
-                    setResult(null);
-                  }}>
-                    Reemplazar en Workspace
-                  </Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Comprimido correctamente!"
+              onDownload={() => downloadBlob(resultBlob, `comprimido_${effectiveFileName}`)}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+                setResult(null);
+              } : undefined}
+            />
           )}
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{error}</div>}

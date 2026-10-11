@@ -4,7 +4,7 @@ import {
   FilePlus2, PenLine, Droplets, EyeOff, ShieldCheck, ShieldOff,
   FileText, Monitor, Table2, Image, FileUp, ScanText,
   ChevronLeft, ChevronRight, X, Download, Sun, Moon,
-  Type, CheckSquare, Lock,
+  Type, CheckSquare, Lock, Undo2, Redo2,
 } from 'lucide-react';
 
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -121,13 +121,22 @@ const SELF_MANAGED_TOOLS: ToolId[] = ['merge', 'create', 'office-to-pdf', 'reorg
 
 const ALL_ITEMS = NAV_GROUPS.flatMap(g => g.items);
 
+const UNSAVED_CHANGES_MESSAGE = 'El documento tiene cambios sin descargar. ¿Cerrarlo de todos modos?';
+
+/** True si el foco está en un campo de texto (ahí Ctrl+Z debe deshacer el texto, no el documento). */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+}
+
 // ── Workspace Component ────────────────────────────────────
 function Workspace() {
   const {
     pdfDoc, fileName, numPages, isLoading, loadProgress,
     clearFile, arrayBuffer, pageInfos, isEncrypted,
+    undo, redo, canUndo, canRedo, isDirty, markSaved,
   } = usePdfContext();
-  const { overlayRenderer } = useWorkspace();
+  const { overlayRenderer, registerCloseTool } = useWorkspace();
   const { theme, toggleTheme } = useTheme();
 
   const [activeTool,      setActiveTool]      = useState<ToolId | null>(null);
@@ -162,10 +171,50 @@ function Workspace() {
     setActiveTool(null);
   }, []);
 
+  // Las herramientas cierran el panel tras aplicar su resultado al documento
+  useEffect(() => {
+    registerCloseTool(closeToolPanel);
+    return () => registerCloseTool(null);
+  }, [registerCloseTool, closeToolPanel]);
+
+  const handleDownload = useCallback(() => {
+    if (!arrayBuffer || !fileName) return;
+    downloadBlob(new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' }), fileName);
+    markSaved();
+  }, [arrayBuffer, fileName, markSaved]);
+
+  const handleCloseDocument = useCallback(() => {
+    if (isDirty && !window.confirm(UNSAVED_CHANGES_MESSAGE)) return;
+    clearFile();
+  }, [isDirty, clearFile]);
+
+  // Avisar antes de cerrar o recargar la pestaña con cambios sin descargar
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
   // ── Global keyboard shortcuts ─────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      // Ctrl+S — descargar el documento con sus cambios
+      if (ctrl && key === 's') {
+        e.preventDefault();
+        if (hasDocument) handleDownload();
+        return;
+      }
+
+      // Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z — deshacer / rehacer cambios del documento
+      if (ctrl && (key === 'z' || key === 'y') && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        if (key === 'y' || e.shiftKey) redo(); else undo();
+        return;
+      }
 
       // Ctrl+F — search
       if (ctrl && e.key === 'f' && hasDocument && !isEncrypted) {
@@ -212,7 +261,7 @@ function Workspace() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen, closeToolPanel]);
+  }, [hasDocument, isEncrypted, showSearch, toolPanelOpen, closeToolPanel, handleDownload, undo, redo]);
 
   const handleFitWidth = useCallback(() => {
     if (!pageInfos || pageInfos.length === 0) { setZoom(1.2); return; }
@@ -230,11 +279,6 @@ function Workspace() {
     const available = window.innerHeight - 44 - 80 - rulers - 64;
     setZoom(Math.max(0.25, Math.min(4.0, available / pageInfos[0].height)));
   }, [pageInfos, showRulers]);
-
-  const handleDownload = useCallback(() => {
-    if (!arrayBuffer || !fileName) return;
-    downloadBlob(new Blob([arrayBuffer as unknown as BlobPart], { type: 'application/pdf' }), fileName);
-  }, [arrayBuffer, fileName]);
 
   // ── Shared button style ────────────────────────────────────
   const hdrBtn = 'p-1.5 rounded transition-colors text-[#999] hover:text-white hover:bg-white/10';
@@ -272,6 +316,15 @@ function Workspace() {
               <span className="text-[#CCC] font-medium truncate max-w-[220px]" title={fileName}>
                 {fileName}
               </span>
+              {isDirty && (
+                <span
+                  className="flex items-center gap-1 text-amber-400 whitespace-nowrap"
+                  title="Hay cambios aplicados que aún no has descargado (Ctrl+S)"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Sin descargar
+                </span>
+              )}
               {numPages > 0 && (
                 <>
                   <span className="text-[#444]">·</span>
@@ -300,11 +353,26 @@ function Workspace() {
 
           {hasDocument && (
             <>
-              <button onClick={handleDownload} className={hdrBtn} title="Descargar PDF  (Ctrl+S)">
+              <button onClick={undo} disabled={!canUndo} className={`${hdrBtn} disabled:opacity-30 disabled:pointer-events-none`} title="Deshacer  (Ctrl+Z)">
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button onClick={redo} disabled={!canRedo} className={`${hdrBtn} disabled:opacity-30 disabled:pointer-events-none`} title="Rehacer  (Ctrl+Y)">
+                <Redo2 className="w-4 h-4" />
+              </button>
+              <div className="w-px h-5 bg-white/8 mx-1" />
+              <button
+                onClick={handleDownload}
+                className={[
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors',
+                  isDirty ? 'bg-[#4C8BF5] text-white hover:bg-[#3B7AE4]' : 'text-[#999] hover:text-white hover:bg-white/10',
+                ].join(' ')}
+                title="Descargar PDF  (Ctrl+S)"
+              >
                 <Download className="w-4 h-4" />
+                Descargar
               </button>
               <button
-                onClick={clearFile}
+                onClick={handleCloseDocument}
                 className="p-1.5 rounded transition-colors text-[#999] hover:text-red-400 hover:bg-red-500/15"
                 title="Cerrar documento"
               >

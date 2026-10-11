@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { ScanText, Loader, CheckCircle, FileText } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { ScanText, Loader, FileText } from 'lucide-react';
 import { BACKEND_URL } from '../../config/api';
 import { formatBytes, downloadBlob } from '../../utils/download';
 
@@ -93,7 +94,7 @@ const OcrTool: React.FC = () => {
           <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-blue-900 truncate">{workspaceFile.name}</p>
-            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Desde Workspace</p>
+            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Documento abierto</p>
           </div>
         </div>
       ) : !localFile ? (
@@ -158,23 +159,16 @@ const OcrTool: React.FC = () => {
 
           {/* Result actions */}
           {result && resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-green-800">¡OCR Aplicado!</p>
-                <p className="text-xs text-green-700 mt-0.5">El PDF resultante tiene texto seleccionable.</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadResult}>Descargar</Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, effectiveFile.name.replace(/\.pdf$/i, '_OCR.pdf'));
-                    setResultBlob(null);
-                    setResult(null);
-                  }}>Reemplazar en Workspace</Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡OCR aplicado!"
+              subtitle="El PDF resultante tiene texto seleccionable."
+              onDownload={downloadResult}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+                setResult(null);
+              } : undefined}
+            />
           )}
 
           {error && !alreadyHasText && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{error}</div>}

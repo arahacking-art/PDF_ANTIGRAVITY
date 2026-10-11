@@ -16,7 +16,7 @@ interface ThumbnailSidebarProps {
  * - Quick actions per page: rotate 90°, delete
  */
 const ThumbnailSidebar: React.FC<ThumbnailSidebarProps> = ({ visible, onToggle, currentPage }) => {
-  const { pageInfos, numPages, arrayBuffer, fileName, replaceWithBlob } = usePdfContext();
+  const { pageInfos, numPages, arrayBuffer, replaceWithBlob } = usePdfContext();
   const { rotatePage, deletePage } = usePdfWorker();
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingPage, setProcessingPage] = useState<number | null>(null);
@@ -80,14 +80,14 @@ const ThumbnailSidebar: React.FC<ThumbnailSidebarProps> = ({ visible, onToggle, 
       setProcessingPage(pageIndex);
       const resultBuffer = await rotatePage(arrayBuffer, pageIndex, 90);
       const blob = new Blob([resultBuffer], { type: 'application/pdf' });
-      await replaceWithBlob(blob, fileName);
+      await replaceWithBlob(blob);
     } catch (error) {
       console.error('Failed to rotate page:', error);
     } finally {
       setIsProcessing(false);
       setProcessingPage(null);
     }
-  }, [arrayBuffer, isProcessing, rotatePage, replaceWithBlob, fileName]);
+  }, [arrayBuffer, isProcessing, rotatePage, replaceWithBlob]);
 
   // ── Delete page (uses Web Worker) ────────────────────────
   const handleDelete = useCallback(async (e: React.MouseEvent, pageIndex: number) => {
@@ -98,14 +98,14 @@ const ThumbnailSidebar: React.FC<ThumbnailSidebarProps> = ({ visible, onToggle, 
       setProcessingPage(pageIndex);
       const resultBuffer = await deletePage(arrayBuffer, pageIndex);
       const blob = new Blob([resultBuffer], { type: 'application/pdf' });
-      await replaceWithBlob(blob, fileName);
+      await replaceWithBlob(blob);
     } catch (error) {
       console.error('Failed to delete page:', error);
     } finally {
       setIsProcessing(false);
       setProcessingPage(null);
     }
-  }, [arrayBuffer, numPages, isProcessing, deletePage, replaceWithBlob, fileName]);
+  }, [arrayBuffer, numPages, isProcessing, deletePage, replaceWithBlob]);
 
   return (
     <>

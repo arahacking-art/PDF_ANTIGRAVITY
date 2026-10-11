@@ -4,7 +4,8 @@ import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { removeCachedThumbnails } from '../../utils/thumbnailCache';
 import Button from '../ui/Button';
-import { EyeOff, Trash2, CheckCircle, Info } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { EyeOff, Trash2, Info } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
 let rectCounter = 0;
@@ -190,7 +191,7 @@ const RedactTool: React.FC = () => {
             <span className="text-sm font-medium text-gray-700 truncate max-w-xs">{workspaceFile.name}</span>
             <div className="flex items-center gap-3">
               {rects.length > 0 && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{rects.length} área{rects.length > 1 ? 's' : ''}</span>}
-              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Workspace</span>
+              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Documento abierto</span>
             </div>
           </div>
 
@@ -202,20 +203,15 @@ const RedactTool: React.FC = () => {
           )}
 
           {resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">¡Procesado correctamente!</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadResult}>Descargar</Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `censurado_${workspaceFile.name}`);
-                    setResultBlob(null);
-                    setRects([]);
-                  }}>Reemplazar en Workspace</Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Censura aplicada!"
+              onDownload={downloadResult}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+                setRects([]);
+              } : undefined}
+            />
           )}
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}

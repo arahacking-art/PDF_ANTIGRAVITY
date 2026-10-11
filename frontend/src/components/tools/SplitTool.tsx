@@ -4,6 +4,7 @@ import { renderPdfPages, type RenderedPage } from '../../utils/pdfRenderer';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
+import ResultActions from '../ui/ResultActions';
 import { Scissors, Loader, CheckCircle } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
@@ -192,25 +193,14 @@ const SplitTool: React.FC = () => {
 
           {/* Result actions */}
           {resultBlob && !isProcessing && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">
-                ¡{keepIndices.length} página{keepIndices.length !== 1 ? 's' : ''} extraída{keepIndices.length !== 1 ? 's' : ''} correctamente!
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `extraido_${effectiveFileName}`)}>
-                  Descargar
-                </Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `extraido_${effectiveFileName}`);
-                    setResultBlob(null); setPages([]); setMarked(new Set());
-                  }}>
-                    Reemplazar en Workspace
-                  </Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title={<>¡{keepIndices.length} página{keepIndices.length !== 1 ? 's' : ''} extraída{keepIndices.length !== 1 ? 's' : ''} correctamente!</>}
+              onDownload={() => downloadBlob(resultBlob, `extraido_${effectiveFileName}`)}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null); setPages([]); setMarked(new Set());
+              } : undefined}
+            />
           )}
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 export type OverlayRenderer = (pageIndex: number, dims: { width: number; height: number }) => ReactNode;
@@ -11,6 +11,10 @@ interface WorkspaceContextType {
    * que React trate la función como un "updater" de useState.
    */
   setOverlayRenderer: (renderer: OverlayRenderer | null) => void;
+  /** Cierra la herramienta activa (p. ej. tras aplicar su resultado al documento) */
+  closeTool: () => void;
+  /** Lo usa App para indicar cómo se cierra la herramienta activa */
+  registerCloseTool: (handler: (() => void) | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
@@ -27,8 +31,14 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
     _setOverlayRenderer(() => renderer);
   }, []);
 
+  const closeToolRef = useRef<(() => void) | null>(null);
+  const closeTool = useCallback(() => closeToolRef.current?.(), []);
+  const registerCloseTool = useCallback((handler: (() => void) | null) => {
+    closeToolRef.current = handler;
+  }, []);
+
   return (
-    <WorkspaceContext.Provider value={{ overlayRenderer, setOverlayRenderer }}>
+    <WorkspaceContext.Provider value={{ overlayRenderer, setOverlayRenderer, closeTool, registerCloseTool }}>
       {children}
     </WorkspaceContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   computeFileHash,
@@ -41,12 +41,40 @@ interface PdfState {
 interface PdfContextValue extends PdfState {
   /** Load a File into the workspace */
   loadFile: (file: File) => Promise<void>;
-  /** Replace the current PDF with new bytes (for chaining tools) */
-  replaceWithBytes: (bytes: Uint8Array, newFileName?: string) => Promise<void>;
-  /** Replace the current PDF with a Blob (e.g. from backend response) */
-  replaceWithBlob: (blob: Blob, newFileName?: string) => Promise<void>;
+  /** Aplica un cambio al documento abierto (se puede deshacer). Conserva el nombre del archivo. */
+  replaceWithBytes: (bytes: Uint8Array) => Promise<void>;
+  /** Igual que replaceWithBytes, a partir de un Blob (p. ej. respuesta del backend) */
+  replaceWithBlob: (blob: Blob) => Promise<void>;
   /** Clear the workspace (no file loaded) */
   clearFile: () => void;
+  /** Vuelve a la versión anterior del documento */
+  undo: () => Promise<void>;
+  /** Rehace el último cambio deshecho */
+  redo: () => Promise<void>;
+  /** Marca la versión actual como guardada (descargada) */
+  markSaved: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Hay cambios aplicados que aún no se han descargado */
+  isDirty: boolean;
+}
+
+interface HistoryEntry {
+  arrayBuffer: ArrayBuffer;
+  fileName: string;
+  version: number;
+}
+
+// Límites del historial de deshacer: cada entrada es una copia completa del PDF.
+const MAX_HISTORY_ENTRIES = 20;
+const MAX_HISTORY_BYTES = 200 * 1024 * 1024;
+
+/** Descarta las versiones más antiguas que excedan los límites (siempre conserva al menos una). */
+function trimHistory(stack: HistoryEntry[]): void {
+  let total = stack.reduce((sum, e) => sum + e.arrayBuffer.byteLength, 0);
+  while (stack.length > MAX_HISTORY_ENTRIES || (stack.length > 1 && total > MAX_HISTORY_BYTES)) {
+    total -= stack.shift()!.arrayBuffer.byteLength;
+  }
 }
 
 const PdfContext = createContext<PdfContextValue | null>(null);
@@ -99,6 +127,41 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Keep a ref to the pdfDoc so we can destroy it on cleanup
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // Estado más reciente, para leerlo desde callbacks sin closures obsoletos
+  const stateRef = useRef(state);
+  useLayoutEffect(() => { stateRef.current = state; });
+
+  // ── Historial (deshacer / rehacer) ──────────────────────
+  const undoRef = useRef<HistoryEntry[]>([]);
+  const redoRef = useRef<HistoryEntry[]>([]);
+  const versionCounterRef = useRef(0);
+  const versionRef = useRef(0);       // versión del documento abierto
+  const savedVersionRef = useRef(0);  // última versión descargada
+  const busyRef = useRef(false);      // evita cambios simultáneos (p. ej. Ctrl+Z repetido)
+  const [historyStatus, setHistoryStatus] = useState({ canUndo: false, canRedo: false, isDirty: false });
+
+  const syncHistoryStatus = useCallback(() => {
+    setHistoryStatus({
+      canUndo: undoRef.current.length > 0,
+      canRedo: redoRef.current.length > 0,
+      isDirty: versionRef.current !== savedVersionRef.current,
+    });
+  }, []);
+
+  const resetHistory = useCallback(() => {
+    undoRef.current = [];
+    redoRef.current = [];
+    versionRef.current = ++versionCounterRef.current;
+    savedVersionRef.current = versionRef.current;
+    syncHistoryStatus();
+  }, [syncHistoryStatus]);
+
+  /** Entrada de historial con el documento abierto, o null si no hay bytes cargados. */
+  const snapshotCurrent = (): HistoryEntry | null => {
+    const { arrayBuffer, fileName } = stateRef.current;
+    return arrayBuffer ? { arrayBuffer, fileName, version: versionRef.current } : null;
+  };
 
   // Clean expired cache on first load
   const cacheCleanedRef = useRef(false);
@@ -252,24 +315,68 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadFile = useCallback(async (file: File) => {
     const ab = await file.arrayBuffer();
+    resetHistory();
     await loadFromArrayBuffer(ab, file.name, file);
+  }, [loadFromArrayBuffer, resetHistory]);
+
+  /** Carga una versión en el visor sin tocar el historial. */
+  const showVersion = useCallback(async (ab: ArrayBuffer, fileName: string) => {
+    await loadFromArrayBuffer(ab, fileName, new File([ab], fileName, { type: 'application/pdf' }));
   }, [loadFromArrayBuffer]);
 
-  const replaceWithBytes = useCallback(async (bytes: Uint8Array, newFileName?: string) => {
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const name = newFileName || state.fileName;
-    const fileObj = new File([ab], name, { type: 'application/pdf' });
-    await loadFromArrayBuffer(ab, name, fileObj);
-  }, [loadFromArrayBuffer, state.fileName]);
+  const replaceWithBytes = useCallback(async (bytes: Uint8Array) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const previous = snapshotCurrent();
+      if (previous) {
+        undoRef.current.push(previous);
+        trimHistory(undoRef.current);
+      }
+      redoRef.current = [];
+      versionRef.current = ++versionCounterRef.current;
+      syncHistoryStatus();
+      await showVersion(ab, stateRef.current.fileName);
+    } finally {
+      busyRef.current = false;
+    }
+  }, [showVersion, syncHistoryStatus]);
 
-  const replaceWithBlob = useCallback(async (blob: Blob, newFileName?: string) => {
-    const ab = await blob.arrayBuffer();
-    const name = newFileName || state.fileName;
-    const fileObj = new File([blob], name, { type: 'application/pdf' });
-    await loadFromArrayBuffer(ab, name, fileObj);
-  }, [loadFromArrayBuffer, state.fileName]);
+  const replaceWithBlob = useCallback(async (blob: Blob) => {
+    await replaceWithBytes(new Uint8Array(await blob.arrayBuffer()));
+  }, [replaceWithBytes]);
+
+  /** Mueve una versión de `from` a `to` y la muestra (base de deshacer/rehacer). */
+  const stepHistory = useCallback(async (
+    from: React.RefObject<HistoryEntry[]>,
+    to: React.RefObject<HistoryEntry[]>,
+  ) => {
+    if (busyRef.current || stateRef.current.isLoading) return;
+    const target = from.current.pop();
+    if (!target) return;
+    busyRef.current = true;
+    try {
+      const current = snapshotCurrent();
+      if (current) to.current.push(current);
+      versionRef.current = target.version;
+      syncHistoryStatus();
+      await showVersion(target.arrayBuffer, target.fileName);
+    } finally {
+      busyRef.current = false;
+    }
+  }, [showVersion, syncHistoryStatus]);
+
+  const undo = useCallback(() => stepHistory(undoRef, redoRef), [stepHistory]);
+  const redo = useCallback(() => stepHistory(redoRef, undoRef), [stepHistory]);
+
+  const markSaved = useCallback(() => {
+    savedVersionRef.current = versionRef.current;
+    syncHistoryStatus();
+  }, [syncHistoryStatus]);
 
   const clearFile = useCallback(() => {
+    resetHistory();
     const oldDoc = pdfDocRef.current;
     pdfDocRef.current = null;
 
@@ -289,7 +396,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldDoc) {
       setTimeout(() => oldDoc.loadingTask.destroy(), 0);
     }
-  }, []);
+  }, [resetHistory]);
 
   return (
     <PdfContext.Provider value={{
@@ -298,6 +405,10 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       replaceWithBytes,
       replaceWithBlob,
       clearFile,
+      undo,
+      redo,
+      markSaved,
+      ...historyStatus,
     }}>
       {children}
     </PdfContext.Provider>

@@ -4,7 +4,8 @@ import { renderPdfPages, type RenderedPage } from '../../utils/pdfRenderer';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { LayoutGrid, Loader, GripVertical, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { LayoutGrid, Loader, GripVertical } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
 // Las miniaturas se muestran a ~200 px de ancho: escala 0.6 (≈360 px para A4) basta incluso
@@ -171,26 +172,15 @@ const ReorganizeTool: React.FC = () => {
           )}
 
           {resultBlob && !isProcessing && (
-            <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg shadow-sm">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">
-                ¡Páginas reorganizadas correctamente!
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `reorganizado_${effectiveFileName}`)}>
-                  Descargar
-                </Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `reorganizado_${effectiveFileName}`);
-                    setResultBlob(null);
-                    setPages([]);
-                  }}>
-                    Reemplazar en Workspace
-                  </Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Páginas reorganizadas correctamente!"
+              onDownload={() => downloadBlob(resultBlob, `reorganizado_${effectiveFileName}`)}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+                setPages([]);
+              } : undefined}
+            />
           )}
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}

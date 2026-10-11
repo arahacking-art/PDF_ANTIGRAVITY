@@ -3,7 +3,8 @@ import { usePdfRotate } from '../../hooks/usePdfRotate';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { RotateCw, FileText, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { RotateCw, FileText } from 'lucide-react';
 import { downloadBlob, formatBytes } from '../../utils/download';
 
 const RotateTool: React.FC = () => {
@@ -53,7 +54,7 @@ const RotateTool: React.FC = () => {
           <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-blue-900 truncate">{workspaceFile.name}</p>
-            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Desde Workspace</p>
+            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Documento abierto</p>
           </div>
         </div>
       ) : !localFile ? (
@@ -106,19 +107,14 @@ const RotateTool: React.FC = () => {
 
           {/* Result actions */}
           {resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">¡Procesado correctamente!</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadResult}>Descargar</Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `rotado_${effectiveFile.name}`);
-                    setResultBlob(null);
-                  }}>Reemplazar en Workspace</Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Páginas rotadas!"
+              onDownload={downloadResult}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+              } : undefined}
+            />
           )}
 
           <div className="flex justify-end gap-3">

@@ -2,8 +2,12 @@ import React, { useState } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
+import ResultActions from '../ui/ResultActions';
 import { GitMerge, Loader, GripVertical, Trash2 } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
+import { usePdfContext } from '../../context/PdfContext';
+
+const MERGED_FILE_NAME = 'Documento_Unido.pdf';
 
 const MergeTool: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -11,10 +15,12 @@ const MergeTool: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const { loadFile, isDirty } = usePdfContext();
 
   const handleMerge = async () => {
     if (files.length < 2) return;
-    setIsProcessing(true); setError(null);
+    setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const mergedPdf = await PDFDocument.create();
       for (const file of files) {
@@ -24,7 +30,7 @@ const MergeTool: React.FC = () => {
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
       const bytes = await mergedPdf.save();
-      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), 'Documento_Unido.pdf');
+      setResultBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }));
     } catch (e: any) {
       setError(e.message || 'Error al unir los PDFs');
     } finally {
@@ -32,8 +38,17 @@ const MergeTool: React.FC = () => {
     }
   };
 
+  const openMerged = async () => {
+    if (!resultBlob) return;
+    if (isDirty && !window.confirm('El documento abierto tiene cambios sin descargar. ¿Cerrarlo y abrir el PDF unido?')) {
+      return false;
+    }
+    await loadFile(new File([resultBlob], MERGED_FILE_NAME, { type: 'application/pdf' }));
+  };
+
   const removeFile = (index: number) => {
     setFiles(files.filter((_, i) => i !== index));
+    setResultBlob(null);
   };
 
   const handleDrop = (e: React.DragEvent, dropIdx: number) => {
@@ -45,6 +60,7 @@ const MergeTool: React.FC = () => {
     const [removed] = newFiles.splice(draggedIdx, 1);
     newFiles.splice(dropIdx, 0, removed);
     setFiles(newFiles);
+    setResultBlob(null);
     setDraggedIdx(null); setDragOverIdx(null);
   };
 
@@ -58,7 +74,7 @@ const MergeTool: React.FC = () => {
         </div>
       </div>
 
-      <Dropzone onFilesSelected={(newFiles) => setFiles([...files, ...newFiles])} accept={{ 'application/pdf': ['.pdf'] }} multiple />
+      <Dropzone onFilesSelected={(newFiles) => { setFiles([...files, ...newFiles]); setResultBlob(null); }} accept={{ 'application/pdf': ['.pdf'] }} multiple />
 
       {files.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-4">
@@ -99,8 +115,18 @@ const MergeTool: React.FC = () => {
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}
 
+          {resultBlob && !isProcessing && (
+            <ResultActions
+              title={`¡${files.length} archivos unidos correctamente!`}
+              onDownload={() => downloadBlob(resultBlob, MERGED_FILE_NAME)}
+              onApply={openMerged}
+              applyLabel="Abrir para seguir editando"
+              applyHint="Se abre el PDF unido en el editor para que puedas firmarlo, censurarlo, etc."
+            />
+          )}
+
           <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-            <button onClick={() => setFiles([])} disabled={isProcessing} className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Limpiar todo</button>
+            <button onClick={() => { setFiles([]); setResultBlob(null); }} disabled={isProcessing} className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">Limpiar todo</button>
             <Button onClick={handleMerge} disabled={files.length < 2 || isProcessing} size="lg">
               {isProcessing ? <span className="flex items-center gap-2"><Loader className="w-4 h-4 animate-spin" />Uniendo...</span> : 'Unir archivos'}
             </Button>

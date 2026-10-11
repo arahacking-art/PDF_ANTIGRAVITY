@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
-import { FileEdit, FileText, CheckCircle } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { FileEdit, FileText } from 'lucide-react';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown } from 'pdf-lib';
 import { downloadBlob, formatBytes } from '../../utils/download';
 
@@ -163,7 +164,7 @@ const FormTool: React.FC = () => {
           <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-blue-900 truncate">{workspaceFile.name}</p>
-            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Desde Workspace</p>
+            <p className="text-xs text-blue-600">{formatBytes(workspaceFile.size)} · Documento abierto</p>
           </div>
         </div>
       ) : !localFile ? (
@@ -230,19 +231,14 @@ const FormTool: React.FC = () => {
           {error && <div className="p-4 text-sm text-red-700 bg-red-100 rounded-lg">{error}</div>}
 
           {resultBlob && (
-            <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-800 font-medium flex-1">¡Procesado correctamente!</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadResult}>Descargar</Button>
-                {workspaceFile && (
-                  <Button size="sm" onClick={async () => {
-                    await ctx.replaceWithBlob(resultBlob, `rellenado_${effectiveFile.name}`);
-                    setResultBlob(null);
-                  }}>Reemplazar en Workspace</Button>
-                )}
-              </div>
-            </div>
+            <ResultActions
+              title="¡Formulario rellenado!"
+              onDownload={downloadResult}
+              onApply={workspaceFile ? async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+              } : undefined}
+            />
           )}
 
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">

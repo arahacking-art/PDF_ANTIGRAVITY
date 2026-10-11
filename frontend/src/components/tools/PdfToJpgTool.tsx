@@ -110,7 +110,7 @@ const PdfToJpgTool: React.FC = () => {
               {pageCount > 0 && <p className="text-xs text-gray-400">{pageCount} página{pageCount > 1 ? 's' : ''}{pageCount > 1 ? ' → ZIP con imágenes' : ' → 1 JPG'}</p>}
             </div>
             {workspaceFile ? (
-              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Workspace</span>
+              <span className="text-xs text-blue-600 font-medium px-2 py-1 bg-blue-50 border border-blue-200 rounded">Documento abierto</span>
             ) : (
               <button onClick={() => { setLocalFile(null); setDone(false); setLocalPageCount(0); }} className="text-xs text-red-500 hover:text-red-700">Cambiar</button>
             )}

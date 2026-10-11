@@ -4,7 +4,8 @@ import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
 import Button from '../ui/Button';
-import { Type, PenTool, CheckCircle, Loader, X } from 'lucide-react';
+import ResultActions from '../ui/ResultActions';
+import { Type, PenTool, Loader, X } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
 
 type TextAnnotation = { type: 'text'; text: string; x: number; y: number; pageIndex: number };
@@ -257,23 +258,14 @@ const AnnotateTool: React.FC = () => {
           </div>
 
           {resultBlob && !isProcessing && (
-            <div className="flex flex-col gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                <p className="text-sm text-green-800 font-medium">¡Anotaciones aplicadas correctamente!</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => downloadBlob(resultBlob, `anotado_${ctx.fileName}`)}>
-                  Descargar
-                </Button>
-                <Button size="sm" onClick={async () => {
-                  await ctx.replaceWithBlob(resultBlob, `anotado_${ctx.fileName}`);
-                  setResultBlob(null);
-                }}>
-                  Reemplazar en Workspace
-                </Button>
-              </div>
-            </div>
+            <ResultActions
+              title="¡Anotaciones aplicadas correctamente!"
+              onDownload={() => downloadBlob(resultBlob, `anotado_${ctx.fileName}`)}
+              onApply={async () => {
+                await ctx.replaceWithBlob(resultBlob);
+                setResultBlob(null);
+              }}
+            />
           )}
 
           {error && <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg border border-red-200">{error}</div>}
