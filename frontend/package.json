@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.34.6",
   "scripts": {
     "dev": "node scripts/copy-pdfjs-assets.mjs && vite",
     "build": "node scripts/copy-pdfjs-assets.mjs && tsc -b && vite build",
