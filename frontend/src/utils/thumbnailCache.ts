@@ -7,7 +7,10 @@
 const DB_NAME = 'pdf-antigravity-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'thumbnails';
-const CACHE_TTL_DAYS = 7;
+// Las miniaturas muestran el contenido de documentos posiblemente confidenciales:
+// se guardan poco tiempo y se borran al cerrar el documento (ver clearThumbnailCache).
+const CACHE_TTL_HOURS = 24;
+const CACHE_TTL_MS = CACHE_TTL_HOURS * 60 * 60 * 1000;
 
 interface CacheEntry {
   hash: string;
@@ -17,10 +20,15 @@ interface CacheEntry {
 }
 
 /**
- * Opens (or creates) the IndexedDB database.
+ * Conexión única y reutilizada a la base de datos. Antes cada consulta abría una
+ * conexión nueva y nunca la cerraba: se acumulaban y bloqueaban borrados/actualizaciones
+ * de la base, haciendo que la siguiente consulta tardara segundos.
  */
+let dbPromise: Promise<IDBDatabase> | null = null;
+
 async function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
@@ -31,31 +39,26 @@ async function openDB(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Si otra pestaña necesita borrar o actualizar la base, se cede la conexión
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      db.onclose = () => { dbPromise = null; };
+      resolve(db);
+    };
+    request.onerror = () => { dbPromise = null; reject(request.error); };
   });
+  return dbPromise;
 }
 
 /**
- * Computes a fast hash from the first 64KB of the file.
- * SHA-256 over a sample is good enough for cache keying.
+ * SHA-256 del archivo completo, como clave del caché.
+ * Antes solo se usaban los primeros y últimos 32 KB más el tamaño: dos versiones de un
+ * documento que difieren en el centro (p. ej. tras censurar) podían compartir clave y
+ * mostrar las miniaturas de la otra. WebCrypto procesa 100 MB en una fracción de segundo.
  */
 export async function computeFileHash(arrayBuffer: ArrayBuffer): Promise<string> {
-  // Sample: first 32KB + last 32KB (catches both header and content changes)
-  const totalBytes = arrayBuffer.byteLength;
-  const sampleSize = Math.min(32768, Math.floor(totalBytes / 2));
-
-  const combined = new Uint8Array(sampleSize * 2 + 8);
-  // Include file size as part of the hash to distinguish files with same start
-  const sizeView = new DataView(combined.buffer, 0, 8);
-  sizeView.setBigUint64(0, BigInt(totalBytes), false);
-
-  combined.set(new Uint8Array(arrayBuffer, 0, sampleSize), 8);
-  if (totalBytes > sampleSize) {
-    combined.set(new Uint8Array(arrayBuffer, totalBytes - sampleSize, sampleSize), 8 + sampleSize);
-  }
-
-  const hashBuffer = await crypto.subtle.digest('SHA-256', combined);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -81,8 +84,7 @@ export async function getCachedThumbnails(
 
         // Check TTL
         const ageMs = Date.now() - entry.timestamp;
-        const maxAgeMs = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
-        if (ageMs > maxAgeMs) { resolve(null); return; }
+        if (ageMs > CACHE_TTL_MS) { resolve(null); return; }
 
         // Verify page count matches (file might have been edited)
         if (entry.pageCount !== expectedPageCount) { resolve(null); return; }
@@ -127,14 +129,13 @@ export async function saveThumbnailsToCache(
 }
 
 /**
- * Removes cache entries older than TTL_DAYS.
+ * Removes cache entries older than CACHE_TTL_HOURS.
  * Call this periodically (e.g., on app startup).
  */
 export async function clearExpiredCache(): Promise<void> {
   try {
     const db = await openDB();
-    const maxAgeMs = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - maxAgeMs;
+    const cutoff = Date.now() - CACHE_TTL_MS;
 
     return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -175,5 +176,20 @@ export async function removeCachedThumbnails(arrayBuffer: ArrayBuffer): Promise<
     });
   } catch {
     // IndexedDB not available — nothing cached
+  }
+}
+
+/** Borra todas las miniaturas guardadas (al cerrar el documento). */
+export async function clearThumbnailCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve(); // Fail silently
+    });
+  } catch {
+    // IndexedDB no disponible
   }
 }

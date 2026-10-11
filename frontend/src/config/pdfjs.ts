@@ -21,6 +21,9 @@ export const PDFJS_DOCUMENT_OPTIONS = {
   standardFontDataUrl: `${ASSETS_BASE}standard_fonts/`,
   wasmUrl: `${ASSETS_BASE}wasm/`,
   iccUrl: `${ASSETS_BASE}iccs/`,
+  // Defensa en profundidad: pdf.js no compila código con eval/new Function (vector de
+  // CVE-2024-4367). Además la CSP de producción lo bloquea y generaba violaciones.
+  isEvalSupported: false,
 };
 
 /** Abre un documento con la configuración de la app. */

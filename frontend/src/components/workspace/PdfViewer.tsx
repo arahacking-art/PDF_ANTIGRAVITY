@@ -256,6 +256,29 @@ const TextLayer: React.FC<{
 };
 
 // ── Search Panel Component ─────────────────────────────────
+
+/**
+ * Texto de cada página (en minúsculas) por documento: extraerlo es lo lento de buscar,
+ * y antes se repetía para todas las páginas con cada búsqueda. WeakMap: se libera solo
+ * cuando el documento deja de usarse.
+ */
+const pageTextCache = new WeakMap<pdfjsLib.PDFDocumentProxy, Map<number, string>>();
+
+async function getPageText(pdfDoc: pdfjsLib.PDFDocumentProxy, pageIndex: number): Promise<string> {
+  let docCache = pageTextCache.get(pdfDoc);
+  if (!docCache) { docCache = new Map(); pageTextCache.set(pdfDoc, docCache); }
+  const cached = docCache.get(pageIndex);
+  if (cached !== undefined) return cached;
+  const page = await pdfDoc.getPage(pageIndex + 1);
+  const textContent = await page.getTextContent();
+  const text = textContent.items
+    .filter((item): item is (typeof textContent.items[number] & { str: string }) => 'str' in item)
+    .map(item => item.str)
+    .join('')
+    .toLowerCase();
+  docCache.set(pageIndex, text);
+  return text;
+}
 interface SearchPanelProps {
   pdfDoc: pdfjsLib.PDFDocumentProxy | null;
   onClose: () => void;
@@ -292,14 +315,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ pdfDoc, onClose, onMatchFound
       for (let i = 0; i < pdfDoc.numPages; i++) {
         if (cancelled) break;
         try {
-          const page = await pdfDoc.getPage(i + 1);
-          const textContent = await page.getTextContent();
-          const fullText = textContent.items
-            .filter((item): item is (typeof textContent.items[number] & { str: string }) => 'str' in item)
-            .map(item => item.str)
-            .join('');
-
-          if (fullText.toLowerCase().includes(term)) {
+          if ((await getPageText(pdfDoc, i)).includes(term)) {
             // Simple match — add page to results
             allMatches.push({ pageIndex: i, rects: [] });
           }

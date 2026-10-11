@@ -5,6 +5,7 @@ import {
   getCachedThumbnails,
   saveThumbnailsToCache,
   clearExpiredCache,
+  clearThumbnailCache,
 } from '../utils/thumbnailCache';
 import { openPdfDocument } from '../config/pdfjs';
 
@@ -211,61 +212,71 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pdfDocRef.current = pdfDoc;
 
       const numPages = pdfDoc.numPages;
-      const pageInfos: PdfPageInfo[] = [];
 
-      // Phase 1: Fast metadata extraction (no canvas rendering)
-      for (let i = 1; i <= numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const vp = page.getViewport({ scale: 1 });
-        pageInfos.push({
-          index: i - 1,
-          width: vp.width,
-          height: vp.height,
-          thumbnailUrl: '',
-        });
-        page.cleanup();
+      // Phase 1: Fast metadata extraction (no canvas rendering).
+      // Las páginas se piden en lotes en paralelo: una a una, cada ida y vuelta al
+      // worker de pdf.js se sumaba y un PDF de cientos de páginas tardaba en mostrarse.
+      const pageInfos: PdfPageInfo[] = new Array(numPages);
+      const METADATA_BATCH = 32;
+      for (let start = 1; start <= numPages; start += METADATA_BATCH) {
+        const end = Math.min(numPages, start + METADATA_BATCH - 1);
+        await Promise.all(Array.from({ length: end - start + 1 }, async (_, k) => {
+          const i = start + k;
+          const page = await pdfDoc.getPage(i);
+          const vp = page.getViewport({ scale: 1 });
+          pageInfos[i - 1] = { index: i - 1, width: vp.width, height: vp.height, thumbnailUrl: '' };
+          page.cleanup();
+        }));
       }
 
-      // Check IndexedDB cache for thumbnails
-      const cachedThumbs = await getCachedThumbnails(fileHash, numPages);
+      // Mostrar el documento ya; las miniaturas llegan después (caché o generadas).
+      // Antes se esperaba a IndexedDB, que puede tardar segundos si está ocupado.
+      setState({
+        file: fileObj || null,
+        arrayBuffer: ab,
+        pdfDoc,
+        pageInfos,
+        numPages,
+        fileName,
+        isLoading: false,
+        loadProgress: 100,
+        isEncrypted: false,
+        error: null,
+      });
 
-      if (cachedThumbs) {
-        // ✅ Cache hit — load thumbnails instantly
-        const pageInfosWithThumbs = pageInfos.map((info, i) => ({
-          ...info,
-          thumbnailUrl: cachedThumbs[i] || '',
-        }));
+      (async () => {
+        const cachedThumbs = await getCachedThumbnails(fileHash, numPages);
+        if (pdfDocRef.current !== pdfDoc) return;
 
-        setState({
-          file: fileObj || null,
-          arrayBuffer: ab,
-          pdfDoc,
-          pageInfos: pageInfosWithThumbs,
-          numPages,
-          fileName,
-          isLoading: false,
-          loadProgress: 100,
-          isEncrypted: false,
-          error: null,
-        });
-      } else {
-        // ❌ Cache miss — display immediately, generate in background
-        setState({
-          file: fileObj || null,
-          arrayBuffer: ab,
-          pdfDoc,
-          pageInfos,
-          numPages,
-          fileName,
-          isLoading: false,
-          loadProgress: 100,
-          isEncrypted: false,
-          error: null,
-        });
+        if (cachedThumbs) {
+          // ✅ Cache hit
+          setState(prev => prev.pdfDoc !== pdfDoc ? prev : {
+            ...prev,
+            pageInfos: prev.pageInfos.map((info, i) => ({ ...info, thumbnailUrl: cachedThumbs[i] || '' })),
+          });
+          return;
+        }
 
         // Phase 2: Background thumbnail generation + save to IndexedDB
         (async () => {
           const generatedThumbs: string[] = [];
+
+          // Las miniaturas se publican en grupos: actualizar el estado por cada una
+          // redibujaba toda la app (visor incluido) cientos de veces durante la carga.
+          let pending: Array<[number, string]> = [];
+          let lastFlush = performance.now();
+          const flush = () => {
+            if (pending.length === 0) return;
+            const batch = pending;
+            pending = [];
+            lastFlush = performance.now();
+            setState(prev => {
+              if (prev.pdfDoc !== pdfDoc) return prev;
+              const newInfos = [...prev.pageInfos];
+              for (const [idx, url] of batch) newInfos[idx] = { ...newInfos[idx], thumbnailUrl: url };
+              return { ...prev, pageInfos: newInfos };
+            });
+          };
 
           for (let i = 1; i <= numPages; i++) {
             if (pdfDocRef.current !== pdfDoc) break;
@@ -273,13 +284,9 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             try {
               const thumb = await generateThumbnail(pdfDoc, i);
               generatedThumbs.push(thumb.url);
-
-              setState(prev => {
-                if (prev.pdfDoc !== pdfDoc) return prev;
-                const newInfos = [...prev.pageInfos];
-                newInfos[i - 1] = { ...newInfos[i - 1], thumbnailUrl: thumb.url };
-                return { ...prev, pageInfos: newInfos };
-              });
+              pending.push([i - 1, thumb.url]);
+              // Las primeras se muestran enseguida; después, como mucho ~4 veces por segundo
+              if (i <= 4 || performance.now() - lastFlush > 250) flush();
             } catch (e: unknown) {
               if ((e as {name?: string})?.name === 'RenderingCancelledException') {
                 break;
@@ -289,12 +296,14 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
+          flush();
+
           // Save to IndexedDB if we generated all thumbs
           if (generatedThumbs.length === numPages && pdfDocRef.current === pdfDoc) {
             saveThumbnailsToCache(fileHash, generatedThumbs).catch(() => {});
           }
         })();
-      }
+      })();
 
       return pdfDoc;
     } catch (err: unknown) {
@@ -384,6 +393,7 @@ export const PdfProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearFile = useCallback(() => {
     resetHistory();
+    clearThumbnailCache().catch(() => {});
     const oldDoc = pdfDocRef.current;
     pdfDocRef.current = null;
 

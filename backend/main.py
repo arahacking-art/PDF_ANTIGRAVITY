@@ -12,13 +12,13 @@ import zipfile
 import pdfplumber
 import openpyxl
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from pdf2docx import Converter
 from pptx import Presentation
 from pptx.util import Inches
 from PIL import Image
 import tempfile
 import os
 import re
+import sys
 import signal
 import subprocess
 import json
@@ -39,10 +39,16 @@ MAX_RENDER_PIXELS = 40_000_000
 MAX_RENDER_PAGES = 500
 # Áreas máximas por petición de censura.
 MAX_REDACT_AREAS = 2000
+# Páginas máximas para PDF → Word (pdf2docx tarda ~0,5-1 s por página) y PDF → Excel.
+MAX_WORD_PAGES = 300
+MAX_EXCEL_PAGES = 500
+# Contraseña mínima al proteger (igual que la validación del frontend).
+MIN_PASSWORD_LENGTH = 4
 # Timeouts de procesos externos. Nginx corta la conexión a los 300 s,
 # así que no tiene sentido seguir trabajando después de ese punto.
 LIBREOFFICE_TIMEOUT = 120
 OCR_TIMEOUT = 290
+WORD_TIMEOUT = 280
 # Idiomas de Tesseract instalados en la imagen (ver Dockerfile).
 OCR_LANGUAGES = {"spa", "eng", "fra", "deu", "por"}
 
@@ -72,7 +78,8 @@ _allowed_origin = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[_allowed_origin],
-    allow_credentials=True,
+    # La API no usa cookies ni autenticación HTTP: no hace falta permitir credenciales.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-Original-Size", "X-Compressed-Size", "X-Reduction-Percent", "X-Result-Size"],
@@ -143,6 +150,23 @@ def check_render_limits(doc: pymupdf.Document, zoom: float) -> None:
             raise HTTPException(413, f"La página {page.number + 1} es demasiado grande para convertirla a imagen.")
 
 
+def check_page_count(contents: bytes, max_pages: int) -> None:
+    """
+    [DoS] Rechaza PDFs protegidos o con más páginas de las que una conversión puede
+    procesar a tiempo. Abrir con PyMuPDF solo lee la estructura: es rápido.
+    """
+    try:
+        with pymupdf.open(stream=contents, filetype="pdf") as doc:
+            if doc.needs_pass:
+                raise HTTPException(400, "El PDF está protegido con contraseña. Quita la contraseña primero.")
+            if len(doc) > max_pages:
+                raise HTTPException(413, f"El documento tiene demasiadas páginas (máximo {max_pages}).")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "El archivo no es un PDF válido o está dañado.")
+
+
 def run_with_timeout(cmd: list[str], timeout: int, **kwargs) -> subprocess.CompletedProcess:
     """
     Ejecuta un proceso externo y, si excede el timeout, mata todo su grupo de procesos.
@@ -185,6 +209,8 @@ def read_root():
 
 @app.post("/api/protect")
 async def protect_pdf(file: UploadFile = File(...), password: str = Form(...)):
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres.")
     try:
         contents = await read_upload(file)
 
@@ -356,11 +382,27 @@ async def compress_pdf(file: UploadFile = File(...), mode: str = Form("standard"
 
 # ─── CONVERSIONES ─────────────────────────────────────────────────────────────
 
+# Script que ejecuta pdf2docx en un proceso hijo (argv: entrada.pdf salida.docx).
+_WORD_CONVERT_SCRIPT = (
+    "import sys\n"
+    "from pdf2docx import Converter\n"
+    "cv = Converter(sys.argv[1])\n"
+    "try:\n"
+    "    cv.convert(sys.argv[2])\n"
+    "finally:\n"
+    "    cv.close()\n"
+)
+
+
 @app.post("/api/to-word")
 async def pdf_to_word(file: UploadFile = File(...)):
-    """Convierte PDF a DOCX usando pdf2docx."""
+    """
+    Convierte PDF a DOCX usando pdf2docx en un proceso aparte: un hilo de Python no se
+    puede cancelar, y un PDF complejo dejaba ocupado el semáforo indefinidamente.
+    """
     try:
         contents = await read_upload(file)
+        check_page_count(contents, MAX_WORD_PAGES)
 
         def process_word():
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -368,14 +410,21 @@ async def pdf_to_word(file: UploadFile = File(...)):
                 docx_path = os.path.join(tmpdir, "output.docx")
                 with open(pdf_path, "wb") as f:
                     f.write(contents)
-                cv = Converter(pdf_path)
-                cv.convert(docx_path)
-                cv.close()
+                result = run_with_timeout(
+                    [sys.executable, "-c", _WORD_CONVERT_SCRIPT, pdf_path, docx_path],
+                    timeout=WORD_TIMEOUT,
+                )
+                if result.returncode != 0 or not os.path.exists(docx_path):
+                    logger.error(f"pdf2docx terminó con código {result.returncode}: {result.stderr[-2000:]}")
+                    raise RuntimeError("WORD_FAILED")
                 with open(docx_path, "rb") as f:
                     return f.read()
 
         async with _convert_semaphore:
-            docx_bytes = await asyncio.to_thread(process_word)
+            try:
+                docx_bytes = await asyncio.to_thread(process_word)
+            except subprocess.TimeoutExpired:
+                raise HTTPException(504, f"La conversión tardó demasiado (límite: {WORD_TIMEOUT} segundos). Prueba con menos páginas.")
 
         safe_name = with_extension(safe_filename(file.filename, "output.pdf"), ".docx")
         return StreamingResponse(
@@ -441,11 +490,15 @@ async def pdf_to_excel(file: UploadFile = File(...)):
     """Extrae tablas del PDF y las exporta a XLSX usando pdfplumber + openpyxl."""
     try:
         contents = await read_upload(file)
+        check_page_count(contents, MAX_EXCEL_PAGES)
 
         def process_excel():
             wb = openpyxl.Workbook()
             wb.remove(wb.active)
             tables_found = 0
+            # El texto de cada página se guarda en la misma pasada, por si no hay tablas
+            # (antes se volvía a abrir y recorrer todo el PDF).
+            page_texts: list[str] = []
             with pdfplumber.open(io.BytesIO(contents)) as pdf:
                 for page_num, page in enumerate(pdf.pages, start=1):
                     tables = page.extract_tables()
@@ -455,15 +508,16 @@ async def pdf_to_excel(file: UploadFile = File(...)):
                         ws = wb.create_sheet(title=sheet_name)
                         for row in table:
                             append_text_row(ws, row)
+                    if tables_found == 0:
+                        page_texts.append(page.extract_text() or "")
+                    page.close()  # libera la caché de objetos de la página
             if tables_found == 0:
                 ws = wb.create_sheet(title="Texto_Extraido")
-                with pdfplumber.open(io.BytesIO(contents)) as pdf:
-                    for page_num, page in enumerate(pdf.pages, start=1):
-                        text = page.extract_text() or ""
-                        ws.append([f"--- Página {page_num} ---"])
-                        for line in text.split("\n"):
-                            append_text_row(ws, [line])
-                        ws.append([])
+                for page_num, text in enumerate(page_texts, start=1):
+                    ws.append([f"--- Página {page_num} ---"])
+                    for line in text.split("\n"):
+                        append_text_row(ws, [line])
+                    ws.append([])
             xlsx_out = io.BytesIO()
             wb.save(xlsx_out)
             xlsx_out.seek(0)
@@ -501,34 +555,32 @@ async def pdf_to_jpg(file: UploadFile = File(...), dpi: int = Form(150)):
         base_name = os.path.splitext(safe_name)[0]
 
         def process_jpg():
-            doc = pymupdf.open(stream=contents, filetype="pdf")
-            zoom = dpi / 72.0
-            check_render_limits(doc, zoom)
-            mat = pymupdf.Matrix(zoom, zoom)
-            images: list[tuple[str, bytes]] = []
-            for i, page in enumerate(doc):
-                pix = page.get_pixmap(matrix=mat)
-                img_bytes = pix.tobytes("jpeg")
-                images.append((f"pagina_{i + 1:03d}.jpg", img_bytes))
-            doc.close()
-            return images
+            """Devuelve (bytes del JPG, None) si hay una página, o (None, ZIP) si hay varias."""
+            with pymupdf.open(stream=contents, filetype="pdf") as doc:
+                zoom = dpi / 72.0
+                check_render_limits(doc, zoom)
+                mat = pymupdf.Matrix(zoom, zoom)
+                if len(doc) == 1:
+                    return doc[0].get_pixmap(matrix=mat).tobytes("jpeg"), None
+                # Cada página va directa al ZIP (no se acumulan todas en memoria) y sin
+                # comprimir: un JPEG ya está comprimido y deflate solo gastaba CPU.
+                zip_out = io.BytesIO()
+                with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_STORED) as zf:
+                    for i, page in enumerate(doc):
+                        zf.writestr(f"pagina_{i + 1:03d}.jpg", page.get_pixmap(matrix=mat).tobytes("jpeg"))
+                zip_out.seek(0)
+                return None, zip_out
 
         async with _convert_semaphore:
-            images = await asyncio.to_thread(process_jpg)
+            single_jpg, zip_out = await asyncio.to_thread(process_jpg)
 
-        if len(images) == 1:
+        if single_jpg is not None:
             return StreamingResponse(
-                io.BytesIO(images[0][1]),
+                io.BytesIO(single_jpg),
                 media_type="image/jpeg",
                 headers={"Content-Disposition": content_disposition(f"{base_name}.jpg")},
             )
 
-        # Múltiples páginas → ZIP
-        zip_out = io.BytesIO()
-        with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zf:
-            for name, data in images:
-                zf.writestr(name, data)
-        zip_out.seek(0)
         return StreamingResponse(
             zip_out,
             media_type="application/zip",
