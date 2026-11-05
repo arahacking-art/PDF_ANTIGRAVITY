@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { rgb } from 'pdf-lib';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
@@ -158,7 +159,7 @@ const AnnotateTool: React.FC = () => {
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const pdfAb = await workspaceFile.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(pdfAb);
+      const pdfDoc = await loadPdfDocument(pdfAb, ctx.fileName);
       const pages = pdfDoc.getPages();
 
       for (const ann of annotations) {

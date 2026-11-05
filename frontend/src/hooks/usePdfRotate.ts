@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { PDFDocument, degrees } from 'pdf-lib';
+import { degrees } from 'pdf-lib';
+import { loadPdfDocument } from '../utils/pdfLoad';
 
 type RotationAngle = 90 | 180 | 270;
 
@@ -16,7 +17,7 @@ export const usePdfRotate = () => {
     setError(null);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await PDFDocument.load(arrayBuffer);
+      const pdf = await loadPdfDocument(arrayBuffer, file.name);
       const pages = pdf.getPages();
 
       const targetPages = pageScope === 'all'

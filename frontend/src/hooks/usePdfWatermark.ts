@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { rgb, StandardFonts, degrees } from 'pdf-lib';
+import { loadPdfDocument } from '../utils/pdfLoad';
 
 export interface WatermarkOptions {
   text: string;
@@ -25,7 +26,7 @@ export const usePdfWatermark = () => {
     setError(null);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await PDFDocument.load(arrayBuffer);
+      const pdf = await loadPdfDocument(arrayBuffer, file.name);
       const font = await pdf.embedFont(StandardFonts.HelveticaBold);
       const color = COLOR_MAP[opts.color];
 

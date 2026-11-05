@@ -4,6 +4,7 @@
  * Runs off the main thread to prevent UI freezing.
  */
 import { PDFDocument, degrees } from 'pdf-lib';
+import { loadPdfDocument } from '../utils/pdfLoad';
 
 type WorkerRequest =
   | { id: string; type: 'ROTATE_PAGE'; payload: { buffer: ArrayBuffer; pageIndex: number; angle: number } }
@@ -25,7 +26,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     switch (type) {
       case 'ROTATE_PAGE': {
         const { buffer, pageIndex, angle } = payload as { buffer: ArrayBuffer; pageIndex: number; angle: number };
-        const pdfDoc = await PDFDocument.load(buffer);
+        const pdfDoc = await loadPdfDocument(buffer);
         const page = pdfDoc.getPage(pageIndex);
         // Normalizado a 0-359: /Rotate debe ser múltiplo de 90 y algunos lectores no aceptan 450, 540...
         page.setRotation(degrees((((page.getRotation().angle + angle) % 360) + 360) % 360));
@@ -37,7 +38,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case 'DELETE_PAGE': {
         const { buffer, pageIndex } = payload as { buffer: ArrayBuffer; pageIndex: number };
-        const pdfDoc = await PDFDocument.load(buffer);
+        const pdfDoc = await loadPdfDocument(buffer);
         pdfDoc.removePage(pageIndex);
         const result = await pdfDoc.save();
         const response: WorkerResponse = { id, type: 'SUCCESS', buffer: result.buffer as ArrayBuffer };
@@ -49,7 +50,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const { buffers } = payload as { buffers: ArrayBuffer[] };
         const mergedDoc = await PDFDocument.create();
         for (const buf of buffers) {
-          const doc = await PDFDocument.load(buf);
+          const doc = await loadPdfDocument(buf);
           const pages = await mergedDoc.copyPages(doc, doc.getPageIndices());
           pages.forEach(p => mergedDoc.addPage(p));
         }
@@ -61,7 +62,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case 'SPLIT': {
         const { buffer, ranges } = payload as { buffer: ArrayBuffer; ranges: Array<{ start: number; end: number }> };
-        const sourceDoc = await PDFDocument.load(buffer);
+        const sourceDoc = await loadPdfDocument(buffer);
         const resultBuffers: ArrayBuffer[] = [];
 
         for (const range of ranges) {

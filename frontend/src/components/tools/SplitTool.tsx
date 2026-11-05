@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PDFDocument } from 'pdf-lib';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { renderPdfPages, type RenderedPage } from '../../utils/pdfRenderer';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
@@ -66,7 +67,7 @@ const SplitTool: React.FC = () => {
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const ab = await effectiveFile.arrayBuffer();
-      const orig = await PDFDocument.load(ab);
+      const orig = await loadPdfDocument(ab, effectiveFileName);
       const newPdf = await PDFDocument.create();
       const copied = await newPdf.copyPages(orig, keepIndices);
       copied.forEach(p => newPdf.addPage(p));

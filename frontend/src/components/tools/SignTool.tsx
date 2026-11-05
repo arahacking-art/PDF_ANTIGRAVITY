@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { getViewSize, uprightRotation, viewToPdf } from '../../utils/pageGeometry';
@@ -160,7 +160,7 @@ const SignTool: React.FC = () => {
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const pdfAb = await workspaceFile.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(pdfAb);
+      const pdfDoc = await loadPdfDocument(pdfAb, ctx.fileName);
       const pages = pdfDoc.getPages();
       if (selectedPage < 0 || selectedPage >= pages.length) {
         throw new Error('Página seleccionada inválida');

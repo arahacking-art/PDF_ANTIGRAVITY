@@ -263,6 +263,43 @@ async def unlock_pdf(file: UploadFile = File(...), password: str = Form(...)):
         raise HTTPException(500, "Error al desbloquear el PDF. Intenta de nuevo.")
 
 
+@app.post("/api/decrypt")
+async def decrypt_pdf(file: UploadFile = File(...)):
+    """
+    Quita el cifrado de PDFs que solo tienen contraseña de PROPIETARIO (restricciones de
+    permisos) y se abren sin contraseña. Es el caso típico de documentos firmados
+    digitalmente: pdf-lib (frontend) no sabe descifrarlos y fallaba al unir, dividir,
+    firmar, etc. Si el PDF exige contraseña de apertura, responde 401 (usar /api/unlock).
+    """
+    try:
+        contents = await read_upload(file)
+
+        def process_decrypt():
+            pdf_out = io.BytesIO()
+            # Sin password: solo abre PDFs cuya contraseña de usuario está vacía.
+            # save() sin `encryption=` escribe el PDF sin cifrado (igual que /api/unlock).
+            with pikepdf.open(io.BytesIO(contents)) as pdf:
+                pdf.save(pdf_out)
+            pdf_out.seek(0)
+            return pdf_out
+
+        async with _convert_semaphore:
+            pdf_out = await asyncio.to_thread(process_decrypt)
+
+        safe_name = safe_filename(file.filename, "documento.pdf")
+        return StreamingResponse(pdf_out, media_type="application/pdf",
+            headers={"Content-Disposition": content_disposition(safe_name)})
+    except HTTPException:
+        raise
+    except pikepdf.PasswordError:
+        raise HTTPException(401, "El PDF está protegido con contraseña de apertura.")
+    except pikepdf.PdfError:
+        raise HTTPException(400, "El archivo no es un PDF válido o está dañado.")
+    except Exception as e:
+        logger.error(f"Error en /api/decrypt: {e}", exc_info=True)
+        raise HTTPException(500, "Error al procesar el PDF cifrado. Intenta de nuevo.")
+
+
 # ─── COMPRIMIR ────────────────────────────────────────────────────────────────
 
 @app.post("/api/compress")

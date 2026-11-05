@@ -4,7 +4,8 @@ import Dropzone from '../ui/Dropzone';
 import Button from '../ui/Button';
 import ResultActions from '../ui/ResultActions';
 import { FileEdit, FileText } from 'lucide-react';
-import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown } from 'pdf-lib';
+import { PDFTextField, PDFCheckBox, PDFDropdown } from 'pdf-lib';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { downloadBlob, formatBytes } from '../../utils/download';
 
 interface FormFieldInfo {
@@ -46,7 +47,7 @@ const FormTool: React.FC = () => {
           buffer = await effectiveFile.arrayBuffer();
         }
 
-        const pdfDoc = await PDFDocument.load(buffer);
+        const pdfDoc = await loadPdfDocument(buffer);
         const form = pdfDoc.getForm();
         const pdfFields = form.getFields();
 
@@ -103,7 +104,7 @@ const FormTool: React.FC = () => {
         buffer = await effectiveFile.arrayBuffer();
       }
 
-      const pdfDoc = await PDFDocument.load(buffer);
+      const pdfDoc = await loadPdfDocument(buffer);
       const form = pdfDoc.getForm();
 
       for (const fieldInfo of fields) {

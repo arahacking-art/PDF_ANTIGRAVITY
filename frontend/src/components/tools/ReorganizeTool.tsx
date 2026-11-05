@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PDFDocument } from 'pdf-lib';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { renderPdfPages, type RenderedPage } from '../../utils/pdfRenderer';
 import { usePdfContext } from '../../context/PdfContext';
 import Dropzone from '../ui/Dropzone';
@@ -79,7 +80,7 @@ const ReorganizeTool: React.FC = () => {
     setIsProcessing(true); setError(null); setResultBlob(null);
     try {
       const arrayBuffer = await effectiveFile.arrayBuffer();
-      const original = await PDFDocument.load(arrayBuffer);
+      const original = await loadPdfDocument(arrayBuffer, effectiveFileName);
       const newPdf = await PDFDocument.create();
       const copied = await newPdf.copyPages(original, pageOrder);
       copied.forEach(p => newPdf.addPage(p));

@@ -3,7 +3,8 @@
  * Escribe resaltados de texto como anotaciones /Highlight reales del PDF, para que
  * se conserven al descargar y se vean (y se puedan borrar) en Acrobat, Chrome, etc.
  */
-import { PDFDocument, PDFString } from 'pdf-lib';
+import { PDFString } from 'pdf-lib';
+import { loadPdfDocument } from './pdfLoad';
 import { viewToPdf } from './pageGeometry';
 
 /** Rectángulo en proporciones (0-1) de la página tal como se ve, origen arriba-izquierda. */
@@ -27,7 +28,7 @@ export async function addHighlights(
   pdfBytes: ArrayBuffer,
   rectsByPage: Map<number, ViewRect[]>,
 ): Promise<Uint8Array> {
-  const doc = await PDFDocument.load(pdfBytes);
+  const doc = await loadPdfDocument(pdfBytes);
   const { context } = doc;
 
   for (const [pageIndex, rects] of rectsByPage) {

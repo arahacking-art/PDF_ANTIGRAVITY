@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import ResultActions from '../ui/ResultActions';
 import { GitMerge, Loader, GripVertical, Trash2 } from 'lucide-react';
 import { downloadBlob } from '../../utils/download';
+import { loadPdfDocument } from '../../utils/pdfLoad';
 import { usePdfContext } from '../../context/PdfContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 
@@ -28,7 +29,7 @@ const MergeTool: React.FC = () => {
       const mergedPdf = await PDFDocument.create();
       for (const file of files) {
         const ab = await file.arrayBuffer();
-        const pdf = await PDFDocument.load(ab);
+        const pdf = await loadPdfDocument(ab, file.name);
         const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       }
